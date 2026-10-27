@@ -1,2 +1,3 @@
 /target
 *.larp
+__pycache__/
