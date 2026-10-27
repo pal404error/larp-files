@@ -78,3 +78,27 @@ That, not raw bytes, is what saves agent cost.
    test suite documents the gap — a paraphrase with no shared words is
    not found. This needs a model download, so it stays future work for
    an offline-first crate.
+
+## Independent comparison: SQLite FTS5 (user-measured, 2026-10-28)
+
+Same 10,023 memories and 18 queries with one known right answer each,
+larp 1.2.0 against SQLite FTS5 with BM25 ranking. Top-5 accuracy:
+
+| Category | larp 1.2.0 | SQLite FTS5 |
+|---|---|---|
+| Exact words | 5/5 | 5/5 |
+| Multi-word | 5/5 | 5/5 |
+| Word-fragment traps ("art" vs "start") | 5/5 | 5/5 |
+| Paraphrases (no shared words) | 0/3 | 0/3 |
+
+File size: 898 KB (larp) vs 1,364 KB (SQLite) — larp 34% smaller.
+Time per query: ~3 ms in-library, 22 ms via CLI (including ~8 ms
+process start) vs 0.45 ms for SQLite.
+
+Notes: the few top-1 differences came from flaws in the query set, not
+from either tool's ranking — one decoy really did contain "rust" as a
+whole word, "ottawa" and "pay" each had two valid answers, and on ties
+larp prefers higher-salience memories by design. The 0/3 paraphrase
+result on both sides confirms the gap is inherent to keyword search,
+not a larp defect — and v1.1.0's substring matching would have failed
+the fragment traps that v1.2.0 now passes.
