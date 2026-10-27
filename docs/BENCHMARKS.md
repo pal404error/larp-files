@@ -20,6 +20,8 @@ Machine: this dev VM. Re-run to reproduce.
 | Single append on 10k file | 64 ms |
 | Recall at 2000-token budget | 181 records, 1991 tokens used |
 
+![File size chart](benchmark-chart.svg)
+
 ## Honest reading
 
 **The size target was missed.** The plan aimed for ≥50% smaller than

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360">
+  <rect width="1200" height="360" fill="#0d1117"/>
+  <rect x="1" y="1" width="1198" height="358" fill="none" stroke="#30363d" stroke-width="2"/>
+  <text x="80" y="190" font-family="DejaVu Sans Mono, monospace" font-size="120" font-weight="bold" fill="#58a6ff">.larp</text>
+  <text x="82" y="250" font-family="DejaVu Sans, sans-serif" font-size="34" fill="#e6edf3">agent memory in a single file</text>
+  <text x="82" y="300" font-family="DejaVu Sans Mono, monospace" font-size="22" fill="#8b949e">no server · no database · token-budget recall</text>
+</svg>

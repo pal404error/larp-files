@@ -1,4 +1,8 @@
-# Launch plan — .larp v1.0
+# Launch plan — .larp v1.1
+
+Note: v1.1.0 is shipped (stats command, agent skill, MCP client configs,
+installer, comparison doc). The drafts below still apply; update the
+version number when you post.
 
 ## Tagline options (pick one)
 
@@ -31,7 +35,7 @@ about the format tradeoffs."
 
 ## r/rust draft
 
-Title: ".larp 1.0 — agent memory as a single file (Rust, MCP, zstd)"
+Title: ".larp 1.1 — agent memory as a single file (Rust, MCP, zstd)"
 
 Body: short version of the above + "What I'd love feedback on: the recall
 ranking formula and whether per-record zstd or block compression is the
@@ -49,8 +53,8 @@ table), first comment = the Show HN body, shortened.
   video on X/LinkedIn; 5 developer friends review the README.
 - Launch day: Show HN in the morning, r/rust + agent communities after,
   Product Hunt listing (prepare tagline + screenshots the day before).
-- Week after: answer every issue/PR within 24h; ship v1.0.1 with community
-  fixes; post a "what I learned building .larp" follow-up.
+- Week after: answer every issue/PR within 24h; ship a patch release with
+  community fixes; post a "what I learned building .larp" follow-up.
 - Ongoing: monthly benchmark updates, changelog post per release.
 
 ## What NOT to do

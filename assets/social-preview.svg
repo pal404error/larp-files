@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <rect width="1280" height="640" fill="#0d1117"/>
+  <rect x="2" y="2" width="1276" height="636" fill="none" stroke="#30363d" stroke-width="3"/>
+  <text x="640" y="300" text-anchor="middle" font-family="DejaVu Sans Mono, monospace" font-size="180" font-weight="bold" fill="#58a6ff">.larp</text>
+  <text x="640" y="390" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="44" fill="#e6edf3">agent memory in a single file</text>
+  <text x="640" y="460" text-anchor="middle" font-family="DejaVu Sans Mono, monospace" font-size="28" fill="#8b949e">no server · no database · token-budget recall</text>
+  <text x="640" y="540" text-anchor="middle" font-family="DejaVu Sans Mono, monospace" font-size="24" fill="#3fb950">github.com/pal404error/larp-files</text>
+</svg>

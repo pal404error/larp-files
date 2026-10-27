@@ -1,15 +1,24 @@
+![.larp banner](assets/banner.svg)
+
 # .larp — agent memory in a single file
 
 [![Tests](https://github.com/pal404error/larp-files/actions/workflows/tests.yml/badge.svg)](https://github.com/pal404error/larp-files/actions/workflows/tests.yml)
 [![Benchmarks](https://github.com/pal404error/larp-files/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/pal404error/larp-files/actions/workflows/benchmarks.yml)
+[![Release](https://github.com/pal404error/larp-files/actions/workflows/release.yml/badge.svg)](https://github.com/pal404error/larp-files/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Markdown memory files waste tokens. Vector DBs need a server. `.larp` is the
-file format in between: small on disk, cheap to load, searchable, versioned.
+Markdown memory files waste tokens. Vector DBs need a server. `.larp` is
+the file format in between: small on disk, cheap to load, searchable,
+versioned. One binary, no server, no database, no API key.
 
 ```bash
-larp append --type fact --salience 0.9 "the user prefers rust"
-larp append --type preference "likes short answers"
-larp recall --max-tokens 2000 rust
+$ larp append --type fact --salience 0.9 "the user prefers rust"
+appended #1
+$ larp append --type preference "likes short answers"
+appended #2
+$ larp recall --max-tokens 2000 rust
+#1 score=0.900 [fact] the user prefers rust
+tokens used: 7 / 2000
 ```
 
 ## Why
@@ -37,15 +46,15 @@ cargo install --path .
 cargo install larp-memory
 ```
 
-## Quick start
+## Quickstart
 
 ```bash
 larp append --type fact --salience 0.9 "the user prefers rust"
 larp append --type preference "likes short answers"
 larp search rust
 larp recall --max-tokens 2000 rust   # best memories fitting 2000 tokens
-larp dump                            # render as Markdown
 larp stats                           # counts, size, live vs superseded
+larp dump                            # render as Markdown
 larp compact                         # drop expired/superseded records
 larp export > memory.jsonl           # JSONL interchange
 larp import backup.jsonl             # restore / merge
@@ -68,12 +77,11 @@ are in [docs/MCP_CLIENTS.md](docs/MCP_CLIENTS.md).
 
 ## Install as an agent skill
 
-The trending way agents consume tools right now is skills. This repo
-ships one: [skills/larp-memory/SKILL.md](skills/larp-memory/SKILL.md).
-Drop the `skills/larp-memory` directory into your agent's skills folder
-and the agent will know when to remember, when to recall, and how to
-stay inside a token budget. It works with the Agent Skills standard
-(Claude Code, Cursor, Codex, and friends).
+This repo ships an Agent Skills standard skill:
+[skills/larp-memory/SKILL.md](skills/larp-memory/SKILL.md). Drop the
+`skills/larp-memory` directory into your agent's skills folder and the
+agent will know when to remember, when to recall, and how to stay inside
+a token budget.
 
 ## How recall works
 
@@ -82,6 +90,8 @@ Score = keyword match x salience x recency decay (`0.5^(age_days/90)`).
 blind full-file dump.
 
 ## Benchmarks (10,000 records)
+
+![File size at 10,000 records](docs/benchmark-chart.svg)
 
 | Metric | Value |
 |---|---|
@@ -101,3 +111,17 @@ optimizations: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 - Corrections supersede; expiry via TTL; 16 MiB decompression cap.
 - Full spec: [docs/FORMAT.md](docs/FORMAT.md). Changelog:
   [CHANGELOG.md](CHANGELOG.md).
+
+## Docs
+
+- [docs/README.md](docs/README.md) — index of all docs
+- [docs/FAQ.md](docs/FAQ.md) — common questions
+- [docs/COMPARISON.md](docs/COMPARISON.md) — .larp vs Markdown, SQLite,
+  vector DBs, hosted memory services
+- [docs/DEMO.md](docs/DEMO.md) — the two-session story
+- [docs/BLOG.md](docs/BLOG.md) — why agent memory needs a file format
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). MIT licensed — see
+[LICENSE](LICENSE).
