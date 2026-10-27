@@ -38,7 +38,7 @@ Agents today store long-term memory in one of two extremes:
 
 ---
 
-## ⚡ 60-Second Install
+## 60-Second Install
 
 ```bash
 # Linux / macOS (installs the latest release binary)
@@ -55,7 +55,7 @@ cargo install --path .
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 Run real commands right away (defaults to `memory.larp` in the current directory, or use `--file <path>`):
 
@@ -81,7 +81,21 @@ larp import memory.jsonl             # merge or restore
 
 ---
 
-## 🤖 Connect to Your Agent
+## Shell Completions
+
+Tab completion for bash, zsh, and fish lives in
+[`completions/`](completions/):
+
+```bash
+# bash
+cp completions/larp.bash ~/.local/share/bash-completion/completions/larp
+# zsh (a directory on $fpath)
+cp completions/_larp ~/.zsh/completions/
+# fish
+cp completions/larp.fish ~/.config/fish/completions/
+```
+
+## Connect to Your Agent
 
 ### Option A: As an MCP Server (Model Context Protocol)
 
@@ -126,7 +140,7 @@ Drop the [`skills/larp-memory`](skills/larp-memory/SKILL.md) directory into your
 
 ---
 
-## 📊 Benchmarks (10,000 Records)
+## Benchmarks (10,000 Records)
 
 Tested using `cargo run --release --example bench` across 10,000 generated memories:
 
@@ -137,8 +151,8 @@ Tested using `cargo run --release --example bench` across 10,000 generated memor
 | Metric | Measured Value | What It Means |
 |---|---|---|
 | **Token Ingestion at 2k Budget** | **181 records in 1,991 tokens** | **99.3% fewer tokens** vs ~287,000 for raw Markdown |
-| **Recall Latency** | **0.70 ms** | Sub-millisecond ranked scoring |
-| **Search Latency** | **0.85 ms** | Instant exact/keyword search |
+| **Recall Latency** | **0.75 ms** | Sub-millisecond ranked scoring |
+| **Search Latency** | **0.90 ms** | Instant exact/keyword search |
 | **Storage vs Markdown** | **91.0%** (1.04 MB vs 1.15 MB) | Per-record zstd compression |
 | **Storage vs JSONL** | **86.2%** (1.04 MB vs 1.21 MB) | Binary frame packing |
 
@@ -147,7 +161,7 @@ Tested using `cargo run --release --example bench` across 10,000 generated memor
 
 ---
 
-## 🔍 Feature & Architecture Comparison
+## Feature & Architecture Comparison
 
 | Feature | Flat Markdown File | Vector Database | SQLite | `.larp` File |
 |---|---|---|---|---|
@@ -162,7 +176,7 @@ See [docs/COMPARISON.md](docs/COMPARISON.md) for detailed evaluation criteria.
 
 ---
 
-## 📐 Format & Specifications
+## Format & Specifications
 
 - **Magic & Version:** Header with `LARP` magic bytes and format version (v2).
 - **Framing:** CRC32-checked append-only records with zstd compression.
@@ -173,7 +187,7 @@ Read the formal specification in [docs/FORMAT.md](docs/FORMAT.md).
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 Explore the complete [Documentation Hub](docs/README.md):
 - [**FAQ**](docs/FAQ.md) — Answers to questions on vector DBs, ranking math, and offline usage.
@@ -184,7 +198,7 @@ Explore the complete [Documentation Hub](docs/README.md):
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome!
 1. Fork and clone the repository

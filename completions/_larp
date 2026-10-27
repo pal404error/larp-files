@@ -1,0 +1,35 @@
+#compdef larp
+# zsh completion for larp. Install somewhere on $fpath, e.g.:
+#   cp completions/_larp ~/.zsh/completions/ && autoload -Uz compinit && compinit
+_larp() {
+  local -a commands
+  commands=(
+    'append:Append a memory record'
+    'list:List records'
+    'dump:Render records as Markdown'
+    'search:Search live records'
+    'recall:Recall within a token budget'
+    'compact:Drop expired/superseded records'
+    'import:Import JSONL'
+    'export:Export JSONL'
+    'stats:Show file statistics'
+    'mcp:Run the MCP server'
+  )
+  _arguments -C \
+    '--file[Memory file]:file:_files' \
+    '--version[Show version]' \
+    '-V[Show version]' \
+    '1:command:->command' \
+    '*::args:->args'
+  case $state in
+    command) _describe -t commands 'command' commands ;;
+    args)
+      case $words[2] in
+        append) _arguments '--type[type]:type:(fact preference episode correction)' '--salience[salience]' '--ttl[TTL seconds]' '--supersedes[superseded id]' ;;
+        recall) _arguments '--max-tokens[max tokens]' ;;
+        export) _arguments '--live[Live records only]' ;;
+      esac
+      ;;
+  esac
+}
+_larp "$@"

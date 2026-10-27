@@ -68,15 +68,15 @@
     <g transform="translate(0, 162)">
       <!-- Rust tag -->
       <rect x="0" y="0" width="84" height="26" rx="6" fill="#1f242c" stroke="#30363d" stroke-width="1" />
-      <text x="42" y="17" fill="#f0883e" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="12" font-weight="600" text-anchor="middle">🦀 Rust</text>
+      <text x="42" y="17" fill="#f0883e" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="12" font-weight="600" text-anchor="middle">Rust</text>
 
       <!-- MCP Server tag -->
       <rect x="94" y="0" width="112" height="26" rx="6" fill="#1f242c" stroke="#30363d" stroke-width="1" />
-      <text x="150" y="17" fill="#79c0ff" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="12" font-weight="600" text-anchor="middle">⚡ Native MCP</text>
+      <text x="150" y="17" fill="#79c0ff" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="12" font-weight="600" text-anchor="middle">Native MCP</text>
 
       <!-- Token savings tag -->
       <rect x="216" y="0" width="156" height="26" rx="6" fill="#1f242c" stroke="#238636" stroke-width="1" />
-      <text x="294" y="17" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="12" font-weight="600" text-anchor="middle">📉 99.3% Fewer Tokens</text>
+      <text x="294" y="17" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="12" font-weight="600" text-anchor="middle">99.3% Fewer Tokens</text>
     </g>
   </g>
 
@@ -103,7 +103,7 @@
       <text x="142" y="14" fill="#a5d6ff">fact "prefers rust"</text>
       
       <!-- Output 1 -->
-      <text x="0" y="32" fill="#3fb950">✓ appended #1 (CRC ok, zstd v2)</text>
+      <text x="0" y="32" fill="#3fb950">appended #1 (CRC ok, zstd v2)</text>
 
       <!-- Command 2 -->
       <text x="0" y="58" fill="#8b949e">$</text>

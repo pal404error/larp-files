@@ -9,15 +9,15 @@ Machine: this dev VM. Re-run to reproduce.
 | Metric | Value |
 |---|---|
 | Records | 10,000 |
-| .larp (v2, zstd) size | 1,043,732 bytes |
+| .larp (v2, zstd) size | 1,044,603 bytes |
 | Markdown dump size | 1,147,515 bytes |
 | JSONL size | 1,211,242 bytes |
 | .larp vs Markdown | **91.0%** |
 | .larp vs JSONL | **86.2%** |
-| Bulk write (10k records) | 89 ms |
-| Search (avg, 10k records) | 0.85 ms |
-| Recall (avg, 10k records) | 0.70 ms |
-| Single append on 10k file | 64 ms |
+| Bulk write (10k records) | 91 ms |
+| Search (avg, 10k records) | 0.90 ms |
+| Recall (avg, 10k records) | 0.75 ms |
+| Single append on 10k file | 65 ms |
 | Recall at 2000-token budget | 181 records, 1991 tokens used |
 
 ![File size chart](benchmark-chart.svg)
@@ -50,6 +50,12 @@ at sub-millisecond latency. That, not raw bytes, is what saves agent cost.
 
 1. **Shared zstd dictionary** stored in the header, trained on record text —
    should compress short records far better than per-record frames alone.
+   UPDATE: a static shared dictionary was measured and REJECTED — it cut
+   bench-like text to 59.5% of plain size but gave 100.7% (no gain) on
+   held-out vocabulary, i.e. it would flatter the benchmark without
+   helping real diverse memories. A per-file dictionary trained on that
+   file's own records remains a possible future direction; it needs a
+   format version bump and a cold-start story for small files.
 2. **Block-compressed segments** (compress batches of records together) to
    exploit cross-record repetition.
 3. **Faster appends**: single appends currently re-read the file to assign

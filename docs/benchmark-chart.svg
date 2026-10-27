@@ -3,7 +3,7 @@
   <text x="20" y="30" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="bold" fill="#24292f">File size at 10,000 records (bytes, smaller is better)</text>
   <text x="20" y="80" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#24292f">.larp</text>
   <rect x="130" y="62" width="448" height="24" fill="#58a6ff"/>
-  <text x="588" y="80" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#24292f">1,043,732</text>
+  <text x="588" y="80" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#24292f">1,044,603</text>
   <text x="20" y="125" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#24292f">Markdown</text>
   <rect x="130" y="107" width="493" height="24" fill="#8b949e"/>
   <text x="633" y="125" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#24292f">1,147,515</text>

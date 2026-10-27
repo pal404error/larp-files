@@ -12,6 +12,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
   regressions vs `docs/benchmark-baseline.txt` (sizes/tokens +10%,
   percentage points +2.0, latencies 3x, recall count must not drop),
   checked by `.github/scripts/check-bench.py`.
+- **Shell completions** for bash, zsh, and fish in `completions/`.
+- **Benchmarks refreshed** to a current run; the static shared
+  dictionary idea was measured and rejected (see BENCHMARKS.md).
+
+### Removed
+- **All emojis** from README headings, the banner, and the benchmark
+  chart (13 removed, verified zero remain).
 
 ### Planned
 - **Shared zstd dictionary training:** Train a dictionary across sample memory corpora to significantly increase compression on short string payloads.

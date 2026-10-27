@@ -28,3 +28,10 @@ Welcome to the `.larp` developer documentation. Explore the technical specificat
 - **Agent Authors & Developers:** Start with [MCP_CLIENTS.md](MCP_CLIENTS.md) and [FAQ.md](FAQ.md).
 - **Core Contributors & Systems Hackers:** Read [FORMAT.md](FORMAT.md) and [BENCHMARKS.md](BENCHMARKS.md).
 - **Tooling & Integrators:** Check out [COMPARISON.md](COMPARISON.md) and the reference client in [`examples/larp_mcp_client.py`](../examples/larp_mcp_client.py).
+
+## Assets
+
+- [`assets/social-preview.png`](../assets/social-preview.png) is the
+  social preview image — upload it in repo Settings → Social preview
+  (there is no API for that step). [`assets/banner.svg`](../assets/banner.svg)
+  is the README banner.
