@@ -25,6 +25,9 @@ larp recall --max-tokens 2000 rust
 ## Install
 
 ```bash
+# One-liner (Linux/macOS, installs the latest release binary)
+curl -fsSL https://raw.githubusercontent.com/pal404error/larp-files/main/install.sh | sh
+
 # From source
 git clone https://github.com/pal404error/larp-files.git
 cd larp-files
@@ -42,6 +45,7 @@ larp append --type preference "likes short answers"
 larp search rust
 larp recall --max-tokens 2000 rust   # best memories fitting 2000 tokens
 larp dump                            # render as Markdown
+larp stats                           # counts, size, live vs superseded
 larp compact                         # drop expired/superseded records
 larp export > memory.jsonl           # JSONL interchange
 larp import backup.jsonl             # restore / merge
@@ -58,6 +62,18 @@ never deleted). Add it to any MCP-compatible client:
 ```json
 {"mcpServers": {"larp": {"command": "larp", "args": ["--file", "/path/to/memory.larp", "mcp"]}}}
 ```
+
+Copy-paste configs for Claude Code, Cursor, VS Code, Codex, and opencode
+are in [docs/MCP_CLIENTS.md](docs/MCP_CLIENTS.md).
+
+## Install as an agent skill
+
+The trending way agents consume tools right now is skills. This repo
+ships one: [skills/larp-memory/SKILL.md](skills/larp-memory/SKILL.md).
+Drop the `skills/larp-memory` directory into your agent's skills folder
+and the agent will know when to remember, when to recall, and how to
+stay inside a token budget. It works with the Agent Skills standard
+(Claude Code, Cursor, Codex, and friends).
 
 ## How recall works
 

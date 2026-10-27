@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 — 2026-10-27
+
+- New `larp stats` command: file size, total/live/superseded counts,
+  live counts by type, live token estimate, live timestamp range.
+- Agent skill: `skills/larp-memory/SKILL.md` (Agent Skills standard) so
+  Claude Code, Cursor, Codex, and friends can adopt .larp as memory.
+- MCP client configs for Claude Code, Cursor, VS Code, Codex, and
+  opencode in `docs/MCP_CLIENTS.md`; stdlib-only Python MCP client
+  example in `examples/larp_mcp_client.py`.
+- One-liner installer (`install.sh`) pulling the release binary.
+- Honest comparison doc (`docs/COMPARISON.md`): Markdown, SQLite, vector
+  DB, hosted memory services, .larp — including stated limits.
+
 ## Unreleased
 
 - CI: split into a dedicated Tests workflow (test matrix across Ubuntu,

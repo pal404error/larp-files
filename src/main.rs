@@ -1,4 +1,4 @@
-//! `larp` CLI: append, list, dump, search, recall, compact, import, export, mcp.
+//! `larp` CLI: append, list, dump, search, recall, compact, import, export, stats, mcp.
 //! Argument parsing is std-only. Global flag `--file <path>` may appear anywhere;
 //! default file is `memory.larp` in the current directory.
 
@@ -21,6 +21,7 @@ fn usage() -> &'static str {
      \x20 search <query>\n\
      \x20 recall [--max-tokens <n>] [query]\n\
      \x20 compact\n\
+     \x20 stats\n\
      \x20 import <path.jsonl>|-\n\
      \x20 export [--live]\n\
      \x20 mcp"
@@ -183,6 +184,37 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
             let live_before = live_records(&before, now_unix()).len();
             let kept = compact(file)?;
             println!("compacted: {live_before} live -> {kept} records kept");
+            Ok(())
+        }
+        "stats" => {
+            let data = read_file(file)?;
+            if data.torn {
+                eprintln!("warning: ignored a torn/corrupt tail");
+            }
+            let size = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
+            let live = live_records(&data.records, now_unix());
+            let total = data.records.len();
+            let mut by_type = [0usize; 4];
+            for r in &live {
+                by_type[r.rtype.tag() as usize] += 1;
+            }
+            let tokens: usize = live.iter().map(|r| r.est_tokens()).sum();
+            let oldest = live.iter().map(|r| r.timestamp).min();
+            let newest = live.iter().map(|r| r.timestamp).max();
+            println!("file: {}", file.display());
+            println!("size_bytes: {size}");
+            println!("total_records: {total}");
+            println!("live_records: {}", live.len());
+            println!("superseded_or_expired: {}", total - live.len());
+            println!(
+                "live_by_type: fact={} preference={} episode={} correction={}",
+                by_type[0], by_type[1], by_type[2], by_type[3]
+            );
+            println!("live_tokens_est: {tokens}");
+            match (oldest, newest) {
+                (Some(a), Some(b)) => println!("live_range_ts: {a}..{b}"),
+                _ => println!("live_range_ts: none"),
+            }
             Ok(())
         }
         "import" => {

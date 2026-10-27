@@ -310,3 +310,45 @@ fn mcp_malformed_input() {
     assert_eq!(lines[1]["result"]["serverInfo"]["name"], "larp");
     let _ = std::fs::remove_file(&f);
 }
+
+#[test]
+fn stats_reports_counts() {
+    let f = tmpfile("stats");
+    let id1 = append_record(&f, rec("alpha fact", 0.9)).unwrap();
+    append_record(&f, rec("beta fact", 0.5)).unwrap();
+    let mut pref = Record::new(
+        RecordType::Preference,
+        0.7,
+        0,
+        "likes short answers".to_string(),
+    );
+    let _ = &mut pref;
+    append_record(&f, pref).unwrap();
+    let mut corr = Record::new(
+        RecordType::Correction,
+        1.0,
+        0,
+        "alpha fact is outdated".to_string(),
+    );
+    corr.supersedes = id1;
+    append_record(&f, corr).unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let out = Command::new(bin)
+        .args(["--file"])
+        .arg(&f)
+        .arg("stats")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("total_records: 4"), "{text}");
+    assert!(text.contains("live_records: 3"), "{text}");
+    assert!(text.contains("superseded_or_expired: 1"), "{text}");
+    assert!(
+        text.contains("live_by_type: fact=1 preference=1 episode=0 correction=1"),
+        "{text}"
+    );
+    assert!(text.contains("live_tokens_est: "), "{text}");
+    let _ = std::fs::remove_file(&f);
+}

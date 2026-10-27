@@ -14,6 +14,8 @@ bumping the format version.
   without asking.
 - Never silently rewrite memory records — corrections are new records that
   supersede old ones (see SPEC.md).
+- If cargo insists a changed binary is fresh (stale fingerprints, seen
+  after the package rename), `cargo clean -p larp-memory` and rebuild.
 - When unsure about a design choice, stop and ask instead of guessing.
 
 ## Commands
