@@ -19,10 +19,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release
+      - name: Stage per-OS artifacts (Linux/macOS binaries share a name)
+        shell: bash
+        run: |
+          if [ -f target/release/larp.exe ]; then
+            cp target/release/larp.exe "larp-${{ runner.os }}.exe"
+          else
+            cp target/release/larp "larp-${{ runner.os }}"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/release/larp
-            target/release/larp.exe
+            larp-*
           fail_on_unmatched_files: false
           generate_release_notes: true
