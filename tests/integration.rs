@@ -275,3 +275,38 @@ fn mcp_end_to_end() {
         .all(|r| !r.text.contains("mcp test memory about rust")));
     let _ = std::fs::remove_file(&f);
 }
+
+#[test]
+fn mcp_malformed_input() {
+    let f = tmpfile("mcp-bad");
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let mut child = Command::new(bin)
+        .arg("--file")
+        .arg(&f)
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = concat!(
+        "this is not json\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"0\"}}}\n",
+    );
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let text = String::from_utf8(out.stdout).unwrap();
+    let lines: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["error"]["code"], -32700);
+    assert_eq!(lines[1]["result"]["serverInfo"]["name"], "larp");
+    let _ = std::fs::remove_file(&f);
+}
