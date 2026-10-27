@@ -16,6 +16,7 @@ Welcome to the `.larp` developer documentation. Explore the technical specificat
 | [**DEMO.md**](DEMO.md) | Step-by-step transcript demonstrating multi-session continuity and memory superseding. |
 | [**BLOG.md**](BLOG.md) | Deep-dive article: *"Why agent memory needs a file format, not another server."* |
 | [**LAUNCH.md**](LAUNCH.md) | Launch strategy, target audiences, and community release guidelines. |
+| [**LAUNCH_KIT.md**](LAUNCH_KIT.md) | Ready-to-use Show HN, Reddit, and Product Hunt drafts + 5 directory PRs. |
 | [**OUTREACH.md**](OUTREACH.md) | Directory and community submission drafts (for maintainers). |
 | [**SKILL.md**](../skills/larp-memory/SKILL.md) | Agent skill definition compliant with the Agent Skills standard. |
 | [**CHANGELOG.md**](../CHANGELOG.md) | Full release history and upcoming roadmap. |

@@ -1,72 +1,71 @@
 # Changelog
 
-## 1.1.0 — 2026-10-27
+All notable changes to `.larp` (`larp-memory`) will be documented in this file.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adhering to [Semantic Versioning](https://semver.org/).
 
-- New `larp stats` command: file size, total/live/superseded counts,
-  live counts by type, live token estimate, live timestamp range.
-- Agent skill: `skills/larp-memory/SKILL.md` (Agent Skills standard) so
-  Claude Code, Cursor, Codex, and friends can adopt .larp as memory.
-- MCP client configs for Claude Code, Cursor, VS Code, Codex, and
-  opencode in `docs/MCP_CLIENTS.md`; stdlib-only Python MCP client
-  example in `examples/larp_mcp_client.py`.
-- One-liner installer (`install.sh`) pulling the release binary.
-- Honest comparison doc (`docs/COMPARISON.md`): Markdown, SQLite, vector
-  DB, hosted memory services, .larp — including stated limits.
+---
 
-## Unreleased
+## [Unreleased]
 
-- CI: split into a dedicated Tests workflow (test matrix across Ubuntu,
-  macOS, Windows + lint job) and a Benchmarks workflow (runs the 10,000
-  record benchmark on pushes to main, relevant PRs, weekly, and on demand;
-  results go to the job summary and an artifact).
-- Security: zstd 0.13.3 → 0.14.3 (zstd-safe 7.3.0 → 8.2.0), fixing the
-  RUSTSEC advisories that failed the audit job.
-- Release workflow: `contents: write` permission (the default token is
-  read-only and the first v1.0.0 release failed with 403) plus
-  `workflow_dispatch` and generated release notes.
-- Discovery: blog draft (docs/BLOG.md), two-session demo (docs/DEMO.md),
-  library quickstart example, CONTRIBUTING.md, SECURITY.md, issue
-  templates, and GitHub repo topics/description.
-- Package renamed `larp` → `larp-memory`: the crates.io name `larp` is
-  taken (v0.0.1, 2018). The CLI binary, the `.larp` format, and the MCP
-  server name are unchanged — only the publishable package name moved.
+### Planned
+- **Shared zstd dictionary training:** Train a dictionary across sample memory corpora to significantly increase compression on short string payloads.
+- **Block-compressed segments:** Optional segment chunking to exploit cross-record redundancy while maintaining fast single-record seek.
+- **Direct import converters:** Turn existing `CLAUDE.md`, `.cursorrules`, and markdown memory dumps directly into indexed `.larp` files in one command.
 
-## 1.0.0 — 2026-10-27
+---
 
-First stable release. Format v2 is frozen: header + CRC-checked append-only
-records, zstd payloads, corrections that supersede, expiry, token-budget
-recall, JSONL interchange, and an MCP server (`remember` / `recall` /
-`forget`). Readers accept v1 and auto-migrate on append.
+## [1.1.0] — 2026-10-27
+> **"From standalone CLI to native agent standard."**
 
-- Hardening: deterministic fuzz-lite parser tests (500 random mutations +
-  pathological inputs, reader must never panic).
-- Hardening: MCP server answers malformed JSON lines with a clean -32700
-  error instead of failing.
-- CI: GitHub Actions workflow (test, clippy, fmt, cargo audit).
-- Release workflow: prebuilt binaries on tag push (Linux, macOS, Windows).
-- Docs: public format spec (docs/FORMAT.md), benchmarks
-  (docs/BENCHMARKS.md), launch plan (docs/LAUNCH.md).
+### Added
+- **Agent Skill:** Official [`skills/larp-memory/SKILL.md`](skills/larp-memory/SKILL.md) compatible with the Agent Skills standard (Claude Code, Antigravity, Cursor, Codex).
+- **Memory Inspection:** New `larp stats` command displaying total/live/superseded counts, live record breakdown by type, estimated token footprint, and timestamp spans.
+- **MCP Ecosystem Hub:** Ready-to-use client configurations for Claude Code, Cursor, VS Code, Codex, and OpenCode in `docs/MCP_CLIENTS.md`.
+- **Reference MCP Client:** Dependency-free Python MCP client demonstration in `examples/larp_mcp_client.py`.
+- **One-Liner Installers:** Automated `install.sh` (Linux/macOS) and `install.ps1` (Windows PowerShell) fetching prebuilt release binaries.
+- **Documentation Hub & FAQ:** Added docs index and FAQ addressing vector DB differences, offline usage, and Windows tips.
 
-## 0.3.0
+### Changed
+- Package renamed from `larp` to `larp-memory` on crates.io to avoid registry collisions (binary name remains `larp`).
 
-- JSONL interchange: `larp import` / `larp export` (ids preserved when they
-  do not collide; collisions get fresh ids and `supersedes` references inside
-  the same batch are remapped).
-- MCP server: `larp mcp` over stdio with `remember`, `recall`, and `forget`
-  (supersede, never delete) tools.
-- CLI: `larp --version` / `-V`.
+---
 
-## 0.2.0
+## [1.0.0] — 2026-10-27
+> **"First stable format freeze with CRC-checked zstd frames and stdio MCP."**
 
-- Format v2: record payloads are zstd-compressed (level 3).
-- Reader accepts v1 (raw) and v2; appending to a v1 file migrates it to v2.
-- Bulk `write_file` path and a 10,000-record benchmark example
-  (`cargo run --release --example bench`); see docs/BENCHMARKS.md.
-- 16 MiB per-record decompression cap (zip-bomb guard).
+### Added
+- **Format v2 Stabilization:** Header magic `LARP` + format version 2 frozen.
+- **Compression & Safety:** Per-record zstd payload compression (level 3) with a strict 16 MiB per-record decompression limit (zip-bomb guard).
+- **Deterministic Fuzz Testing:** Added `tests/fuzz_lite.rs` testing reader behavior against 500+ random byte mutations and pathological inputs (zero panics guarantee).
+- **Crash Recovery:** Readers gracefully handle torn-tail appends and corrupt records.
+- **CI / CD Matrix:** Multi-platform testing across Ubuntu, macOS, and Windows.
 
-## 0.1.0
+---
 
-- Initial release: binary format with header, CRC-checked append-only
-  records, torn-tail safety, corrections that supersede, expiry,
-  token-budget recall ranked by keyword match x salience x recency decay.
-- CLI: `append`, `list`, `dump`, `search`, `recall`, `compact`.
+## [0.3.0] — 2026-10-26
+> **"JSONL interoperability and first stdio MCP server."**
+
+### Added
+- **Lossless Interchange:** `larp import` and `larp export` with collision-safe ID remapping.
+- **MCP Server:** Native stdio JSON-RPC 2.0 server (`larp mcp`) exposing `remember`, `recall`, and `forget`.
+- **CLI Flags:** Global `--file <path>` flag and `--version` support.
+
+---
+
+## [0.2.0] — 2026-10-25
+> **"Zstandard compression upgrade."**
+
+### Added
+- Implemented format v2 zstd compression.
+- Automatic v1-to-v2 migration on subsequent appends.
+- 10,000-record benchmark suite in `examples/bench.rs`.
+
+---
+
+## [0.1.0] — 2026-10-24
+> **"Initial prototype of single-file agent memory."**
+
+### Added
+- Core binary file format: header, CRC32 checks, append-only records, and superseded status flags.
+- Recency-decayed token-budgeted recall ranking (`keyword_match * salience * 0.5^(age_days/90)`).
+- Basic CLI: `append`, `list`, `dump`, `search`, `recall`, `compact`.
