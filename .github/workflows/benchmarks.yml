@@ -34,3 +34,5 @@ jobs:
         with:
           name: bench-results
           path: bench-results.txt
+      - name: Check for regressions vs baseline
+        run: python3 .github/scripts/check-bench.py bench-results.txt docs/benchmark-baseline.txt

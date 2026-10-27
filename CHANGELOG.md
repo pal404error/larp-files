@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
 
 ## [Unreleased]
 
+### Added
+- **Benchmark regression gate:** the Benchmarks workflow now fails on
+  regressions vs `docs/benchmark-baseline.txt` (sizes/tokens +10%,
+  percentage points +2.0, latencies 3x, recall count must not drop),
+  checked by `.github/scripts/check-bench.py`.
+
 ### Planned
 - **Shared zstd dictionary training:** Train a dictionary across sample memory corpora to significantly increase compression on short string payloads.
 - **Block-compressed segments:** Optional segment chunking to exploit cross-record redundancy while maintaining fast single-record seek.

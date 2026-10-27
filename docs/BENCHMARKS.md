@@ -22,6 +22,17 @@ Machine: this dev VM. Re-run to reproduce.
 
 ![File size chart](benchmark-chart.svg)
 
+## Regression gate
+
+The Benchmarks workflow fails on regressions vs
+[benchmark-baseline.txt](benchmark-baseline.txt), checked by
+`.github/scripts/check-bench.py`: sizes and token counts +10%,
+percentage points +2.0, latencies 3x (shared runners are noisy), and
+the recall count must not drop. To update the baseline after an
+intentional change, re-run `cargo run --release --example bench`,
+replace the values in the baseline file, and say why in the commit
+message.
+
 ## Honest reading
 
 **The size target was missed.** The plan aimed for ≥50% smaller than
