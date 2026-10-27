@@ -1,5 +1,8 @@
 # .larp — agent memory in a single file
 
+[![Tests](https://github.com/pal404error/larp-files/actions/workflows/tests.yml/badge.svg)](https://github.com/pal404error/larp-files/actions/workflows/tests.yml)
+[![Benchmarks](https://github.com/pal404error/larp-files/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/pal404error/larp-files/actions/workflows/benchmarks.yml)
+
 Markdown memory files waste tokens. Vector DBs need a server. `.larp` is the
 file format in between: small on disk, cheap to load, searchable, versioned.
 

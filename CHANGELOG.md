@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- CI: split into a dedicated Tests workflow (test matrix across Ubuntu,
+  macOS, Windows + lint job) and a Benchmarks workflow (runs the 10,000
+  record benchmark on pushes to main, relevant PRs, weekly, and on demand;
+  results go to the job summary and an artifact).
+
 ## 1.0.0 — 2026-10-27
 
 First stable release. Format v2 is frozen: header + CRC-checked append-only

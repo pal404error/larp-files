@@ -1,0 +1,36 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "src/**"
+      - "examples/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  schedule:
+    # Weekly on Mondays at 06:00 UTC, to catch slow regressions.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run benchmarks (10,000 records)
+        run: cargo run --release --example bench | tee bench-results.txt
+      - name: Publish results to job summary
+        run: |
+          {
+            echo '```'
+            cat bench-results.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload results artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results.txt
