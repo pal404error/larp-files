@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,3 +25,4 @@ jobs:
             target/release/larp
             target/release/larp.exe
           fail_on_unmatched_files: false
+          generate_release_notes: true

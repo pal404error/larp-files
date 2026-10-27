@@ -6,6 +6,14 @@
   macOS, Windows + lint job) and a Benchmarks workflow (runs the 10,000
   record benchmark on pushes to main, relevant PRs, weekly, and on demand;
   results go to the job summary and an artifact).
+- Security: zstd 0.13.3 → 0.14.3 (zstd-safe 7.3.0 → 8.2.0), fixing the
+  RUSTSEC advisories that failed the audit job.
+- Release workflow: `contents: write` permission (the default token is
+  read-only and the first v1.0.0 release failed with 403) plus
+  `workflow_dispatch` and generated release notes.
+- Discovery: blog draft (docs/BLOG.md), two-session demo (docs/DEMO.md),
+  library quickstart example, CONTRIBUTING.md, SECURITY.md, issue
+  templates, and GitHub repo topics/description.
 
 ## 1.0.0 — 2026-10-27
 
