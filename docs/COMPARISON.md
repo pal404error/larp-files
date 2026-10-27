@@ -19,12 +19,12 @@ their architecture, not cherry-picked benchmarks.
 
 ## Honest limits
 
-- `.larp` search is keyword-based, not semantic: it will not find a
-  memory phrased completely differently from your query. If you need
-  semantic recall, pair it with embeddings or use a vector store.
-- Per-record compression is modest on short records (91.0% of Markdown
+- `.larp` search is keyword-based (BM25, whole-word), not semantic: it
+  will not find a memory phrased completely differently from your query.
+  If you need semantic recall, pair it with embeddings or use a vector
+  store.
+- Per-record compression is modest on short records (76.8% of Markdown
   size at 10k records). The win is tokens at recall time, not bytes on
   disk — see `docs/BENCHMARKS.md` for the full picture.
-- Single-writer at a time: two agents appending to the same file
-  concurrently can interleave. One agent (or one file per agent) is the
-  intended shape.
+- Writers are serialized by an advisory lock (`<file>.lock`); two agents
+  appending at once no longer interleave or lose records.

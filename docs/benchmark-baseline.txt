@@ -4,13 +4,13 @@
 # values below with the new output, and say why in the commit message.
 # Lines starting with # are ignored by the check script.
 records: 10000
-larp_bytes: 1044603
+larp_bytes: 881091
 md_bytes: 1147515
 jsonl_bytes: 1211242
-larp_vs_md_pct: 91.0
-larp_vs_jsonl_pct: 86.2
-bulk_write_ms: 91
-search_avg_ms: 0.90
-recall_avg_ms: 0.75
-single_append_ms: 65
+larp_vs_md_pct: 76.8
+larp_vs_jsonl_pct: 72.7
+bulk_write_ms: 99
+search_avg_ms: 5.85
+recall_avg_ms: 5.20
+single_append_ms: 4
 recall_2000_tokens: picked=181 used=1991

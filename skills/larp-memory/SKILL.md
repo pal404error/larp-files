@@ -27,13 +27,22 @@ Cursor, VS Code, Codex, and opencode configs). The server command is
 ## Tools (via MCP)
 
 - `remember` — store a memory. Arguments: `text` (required), `type`
-  (`fact` | `preference` | `episode`, default `fact`), `salience`
-  (0–1, default 0.5), `ttl_secs` (0 = never expires).
+  (`fact` | `preference` | `episode` | `correction`, default `fact`),
+  `salience` (0–1, default 0.5), `ttl_secs` (0 = never expires),
+  `supersedes` (id this correction replaces — only corrections
+  supersede), `tags` (project/namespace tags), `meta` (extensible
+  key/value metadata). A near-duplicate of a live record is not stored
+  twice; the existing id is returned instead.
 - `recall` — retrieve memories. Arguments: `query`, `max_tokens`
-  (default 2000). Returns the best memories that fit the budget, ranked
-  by keyword match x salience x recency decay.
+  (default 2000), `tag` (restrict to one project/namespace). Returns the
+  best memories that fit the budget, ranked by BM25 whole-word match x
+  salience x episode-only recency decay, each line carrying score,
+  salience, and timestamp so you can judge staleness.
 - `forget` — supersede a memory by id. The old record stays in the file
-  for audit; it just stops being live.
+  for audit; it just stops being live. Forgetting a correction revives
+  the record it replaced.
+- `list` — list live memories (`limit`, default 100).
+- `stats` — counts, size, live vs superseded, token estimate.
 
 ## CLI equivalents
 

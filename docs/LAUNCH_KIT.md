@@ -36,7 +36,7 @@ When building long-running AI coding agents, you quickly run into the memory dil
 I built .larp (https://github.com/pal404error/larp-files) as the local-first middle ground. It's a single-file format with a standalone Rust binary (`larp-memory` crate) and native Model Context Protocol (MCP) server.
 
 How it works:
-- Append-only binary framing: Header with magic bytes + CRC32-checked records with per-record zstd compression (v2).
+- Append-only binary framing: Header with magic bytes + CRC32-checked records with per-record zstd compression (v3).
 - Non-destructive updates: Corrections supersede prior records. The old records stay in the file for full auditability until you explicitly run `larp compact`.
 - Token-budgeted recall: Returns only the highest-scoring memories that fit strictly within your token budget (Score = keyword_match * salience * 0.5^(age_days/90)). In benchmarks on 10k records, a 2,000-token budget returned the 181 most relevant memories in 1,991 tokens (99.3% reduction in context window waste).
 - Native MCP: Speaks JSON-RPC 2.0 over stdio with `remember`, `recall`, and `forget` tools for Claude Code, Cursor, VS Code, and Codex.

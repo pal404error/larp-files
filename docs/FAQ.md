@@ -19,12 +19,17 @@ This runs in sub-millisecond time ($<1\text{ ms}$ on 10,000 records) on any mach
 ---
 
 ### Can two agents share one memory file?
-One writer at a time is the intended architecture. Two agents appending to the same file concurrently can interleave frames. Best practice: use one `.larp` file per agent/workspace, or serialize writes.
+Yes. Every mutation takes an advisory exclusive lock on
+`<file>.lock`, so concurrent appends serialize instead of
+interleaving, and no append is lost. (Advisory means it coordinates
+larp writers; it cannot stop another program editing the file by
+hand.) For separate projects, prefer tags (`--tag work`) and a tag
+filter on recall over one file per agent.
 
 ---
 
 ### What happens if the process crashes mid-append?
-Only the tail can tear. Records are CRC32-checked and length-framed; a torn or corrupt tail is detected and safely ignored by readers, ensuring prior history is never corrupted. Run `larp compact` to write out a cleaned file.
+Only the tail can tear. Records are CRC32-checked and length-framed; a torn or corrupt tail is detected and safely ignored by readers, ensuring prior history is never corrupted. The next append truncates the file back to the last good frame first, so nothing written after a crash is silently lost. Whole-file rewrites (compact, import) write a temp file and rename it over the original, and appends fsync before returning. Run `larp compact` to write out a cleaned file.
 
 ---
 
@@ -32,6 +37,7 @@ Only the tail can tear. Records are CRC32-checked and length-framed; a torn or c
 `.larp` preserves complete auditability:
 - **Updating a memory:** Append a record with `--type correction --supersedes <ID>`. The previous record remains in the file with its timestamp for audit, but is marked as superseded during `recall` and `list`.
 - **Deleting a memory:** Use `forget(id)` via MCP or append a tombstone.
+  Forgetting a correction revives the record it replaced.
 - **Permanent cleanup:** Run `larp compact` to safely purge superseded or expired records and reclaim disk space.
 
 ---
@@ -39,7 +45,7 @@ Only the tail can tear. Records are CRC32-checked and length-framed; a torn or c
 ### How does `.larp` save tokens if it's not a full database?
 Markdown memory files force agents to re-read thousands of lines of past logs at the start of every session (~287,000 tokens for 10,000 records). 
 
-With `larp recall --max-tokens 2000 <query>`, `.larp` scores every live record against the query, applies recency decay, and only yields the highest-ranked records that fit strictly within your token budget (e.g., 181 records fitting into 1,991 tokens). You get **99.3% fewer tokens** ingested into your model prompt.
+With `larp recall --max-tokens 2000 <query>`, `.larp` ranks every live record with BM25 over whole-word matches, times salience, with recency decay on episodes only, and only yields the highest-ranked records that fit strictly within your token budget (e.g., 181 records fitting into 1,991 tokens). You get **99.3% fewer tokens** ingested into your model prompt.
 
 ---
 

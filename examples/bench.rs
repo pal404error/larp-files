@@ -1,4 +1,4 @@
-//! Phase 3 benchmark: .larp (v2, zstd) vs Markdown vs JSONL on 10,000 records.
+//! Phase 3 benchmark: .larp (v3, varint + zstd/raw) vs Markdown vs JSONL on 10,000 records.
 //! Run: cargo run --release --example bench
 //! Prints sizes, ratios, and search/recall timings to stdout.
 

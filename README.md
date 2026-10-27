@@ -31,7 +31,7 @@ Agents today store long-term memory in one of two extremes:
 ## The Solution: `.larp`
 
 `.larp` is the local-first file format in between. One portable file with:
-- **Append-only CRC-checked frames** with zstd compression (v2).
+- **Append-only CRC-checked frames** with zstd compression (v3).
 - **Audit preservation:** Corrections supersede older entries without rewriting history.
 - **Budgeted Recall:** Returns the highest-scoring memories that fit strictly inside your token budget, saving up to **99.3% in token overhead**.
 - **Native MCP Server:** Plug directly into Claude Code, Cursor, VS Code Copilot, or Codex via stdio.
@@ -151,13 +151,13 @@ Tested using `cargo run --release --example bench` across 10,000 generated memor
 | Metric | Measured Value | What It Means |
 |---|---|---|
 | **Token Ingestion at 2k Budget** | **181 records in 1,991 tokens** | **99.3% fewer tokens** vs ~287,000 for raw Markdown |
-| **Recall Latency** | **0.75 ms** | Sub-millisecond ranked scoring |
-| **Search Latency** | **0.90 ms** | Instant exact/keyword search |
-| **Storage vs Markdown** | **91.0%** (1.04 MB vs 1.15 MB) | Per-record zstd compression |
-| **Storage vs JSONL** | **86.2%** (1.04 MB vs 1.21 MB) | Binary frame packing |
+| **Recall Latency** | **5.20 ms** | BM25 ranked scoring at 10k records |
+| **Search Latency** | **5.85 ms** | BM25 whole-word search at 10k records |
+| **Storage vs Markdown** | **76.8%** (0.88 MB vs 1.15 MB) | Varint headers, zstd or raw per record |
+| **Storage vs JSONL** | **72.7%** (0.88 MB vs 1.21 MB) | Binary frame packing |
 
 > [!NOTE]
-> **Radical Transparency:** Per-record zstd framing adds ~41 bytes of metadata overhead per record, which limits compression gains on tiny (60–100 char) strings. The true breakthrough is **token efficiency**: serving ranked memories within budget rather than dumping hundreds of thousands of tokens into your LLM prompt. Read the full analysis in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+> **Radical Transparency:** Per-record framing (now variable-length in v3) still adds overhead per record, which limits compression gains on tiny (60–100 char) strings, and per-record compression cannot exploit repetition across records. The true breakthrough is **token efficiency**: serving ranked memories within budget rather than dumping hundreds of thousands of tokens into your LLM prompt. Read the full analysis in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ---
 
@@ -168,9 +168,9 @@ Tested using `cargo run --release --example bench` across 10,000 generated memor
 | **External Setup** | None | Server + Embeddings model | C/driver library | **None (Single binary)** |
 | **Recall Cost** | Full file every session | Query cost + vector latency | SQL query | **Token budget you choose** |
 | **Portability** | Yes | No | Yes | **Yes (Single portable file)** |
-| **Crash Safety** | No | Yes | Yes (WAL) | **Yes (CRC32 frame checks)** |
+| **Crash Safety** | No | Yes | Yes (WAL) | **Yes (CRC32 frames, fsync, atomic rewrites)** |
 | **Audit & Corrections** | Silent overwrites | Overwrites | Triggers / history tables | **Append-only supersedes** |
-| **Sub-ms Latency** | Read dependent | 10–50 ms | 1–5 ms | **< 1 ms** |
+| **Latency at 10k records** | Read dependent | 10–50 ms | 1–5 ms | **Single-digit ms** |
 
 See [docs/COMPARISON.md](docs/COMPARISON.md) for detailed evaluation criteria.
 
@@ -178,10 +178,10 @@ See [docs/COMPARISON.md](docs/COMPARISON.md) for detailed evaluation criteria.
 
 ## Format & Specifications
 
-- **Magic & Version:** Header with `LARP` magic bytes and format version (v2).
-- **Framing:** CRC32-checked append-only records with zstd compression.
+- **Magic & Version:** Header with `LARP` magic bytes and format version (v3).
+- **Framing:** CRC32-checked append-only records, varint headers, zstd or raw per record.
 - **Decompression Guard:** 16 MiB decompression limit prevents memory bombs.
-- **Auto-Migration:** v1 files are seamlessly recognized and upgraded.
+- **Auto-Migration:** v1/v2 files are seamlessly recognized and upgraded to v3.
 
 Read the formal specification in [docs/FORMAT.md](docs/FORMAT.md).
 
