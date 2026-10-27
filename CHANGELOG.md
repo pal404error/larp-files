@@ -1,12 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-10-27
+
+First stable release. Format v2 is frozen: header + CRC-checked append-only
+records, zstd payloads, corrections that supersede, expiry, token-budget
+recall, JSONL interchange, and an MCP server (`remember` / `recall` /
+`forget`). Readers accept v1 and auto-migrate on append.
 
 - Hardening: deterministic fuzz-lite parser tests (500 random mutations +
   pathological inputs, reader must never panic).
-- Hardening: MCP server ignores malformed JSON lines with a clean -32700
+- Hardening: MCP server answers malformed JSON lines with a clean -32700
   error instead of failing.
 - CI: GitHub Actions workflow (test, clippy, fmt, cargo audit).
+- Release workflow: prebuilt binaries on tag push (Linux, macOS, Windows).
+- Docs: public format spec (docs/FORMAT.md), benchmarks
+  (docs/BENCHMARKS.md), launch plan (docs/LAUNCH.md).
 
 ## 0.3.0
 

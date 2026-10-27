@@ -1,9 +1,13 @@
 [package]
 name = "larp"
-version = "0.3.0"
+version = "1.0.0"
 edition = "2021"
 description = "Agent memory file format: compact, versioned, searchable memory in a single file"
 license = "MIT"
+repository = "https://github.com/pal404error/larp-files"
+readme = "README.md"
+keywords = ["ai", "agents", "memory", "file-format", "mcp"]
+categories = ["command-line-utilities", "data-structures"]
 
 [lib]
 name = "larp"
