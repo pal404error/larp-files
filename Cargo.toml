@@ -1,5 +1,5 @@
 [package]
-name = "larp"
+name = "larp-memory"
 version = "1.0.0"
 edition = "2021"
 description = "Agent memory file format: compact, versioned, searchable memory in a single file"
@@ -10,7 +10,7 @@ keywords = ["ai", "agents", "memory", "file-format", "mcp"]
 categories = ["command-line-utilities", "data-structures"]
 
 [lib]
-name = "larp"
+name = "larp_memory"
 path = "src/lib.rs"
 
 [[bin]]

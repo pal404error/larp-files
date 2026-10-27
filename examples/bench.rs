@@ -2,7 +2,7 @@
 //! Run: cargo run --release --example bench
 //! Prints sizes, ratios, and search/recall timings to stdout.
 
-use larp::{
+use larp_memory::{
     append_record, dump_markdown, now_unix, read_file, recall, search, write_file, Record,
     RecordType,
 };

@@ -1,7 +1,7 @@
 # larp — agent instructions
 
 ## Project
-Rust package: library crate `larp` + CLI binary. Format spec is frozen in
+Rust package: library crate `larp-memory` (lib target `larp_memory`) + CLI binary `larp`. Format spec is frozen in
 SPEC.md — do NOT change the on-disk format without updating SPEC.md and
 bumping the format version.
 

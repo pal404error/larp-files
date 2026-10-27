@@ -14,6 +14,9 @@
 - Discovery: blog draft (docs/BLOG.md), two-session demo (docs/DEMO.md),
   library quickstart example, CONTRIBUTING.md, SECURITY.md, issue
   templates, and GitHub repo topics/description.
+- Package renamed `larp` → `larp-memory`: the crates.io name `larp` is
+  taken (v0.0.1, 2018). The CLI binary, the `.larp` format, and the MCP
+  server name are unchanged — only the publishable package name moved.
 
 ## 1.0.0 — 2026-10-27
 

@@ -4,7 +4,7 @@
 //! Each call re-reads the memory file, so state is always fresh. The loop
 //! ends on stdin EOF, which is also how tests drive it.
 
-use larp::{append_record, now_unix, read_file, recall, Record, RecordType};
+use larp_memory::{append_record, now_unix, read_file, recall, Record, RecordType};
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 use std::path::Path;

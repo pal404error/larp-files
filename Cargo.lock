@@ -54,7 +54,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "larp"
+name = "larp-memory"
 version = "1.0.0"
 dependencies = [
  "serde",

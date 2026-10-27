@@ -31,7 +31,7 @@ cd larp-files
 cargo install --path .
 
 # Once published to crates.io
-cargo install larp
+cargo install larp-memory
 ```
 
 ## Quick start

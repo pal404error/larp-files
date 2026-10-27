@@ -5,7 +5,7 @@
 //! regression net for the parser's unsafe corners: huge length fields,
 //! corrupt CRCs, truncated frames, and garbage bytes.
 
-use larp::{append_record, read_file, Record, RecordType};
+use larp_memory::{append_record, read_file, Record, RecordType};
 use std::path::PathBuf;
 
 fn tmpfile(name: &str) -> PathBuf {

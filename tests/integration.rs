@@ -1,4 +1,4 @@
-use larp::{
+use larp_memory::{
     append_record, compact, crc32, export_jsonl, import_jsonl, live_records, now_unix, read_file,
     recall, search, Record, RecordType,
 };

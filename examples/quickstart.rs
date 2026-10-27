@@ -1,7 +1,7 @@
 //! Quickstart: use .larp as a library.
 //! Run: cargo run --example quickstart
 
-use larp::{append_record, now_unix, read_file, recall, Record, RecordType};
+use larp_memory::{append_record, now_unix, read_file, recall, Record, RecordType};
 
 fn main() {
     let path = std::env::temp_dir().join("larp-quickstart.larp");

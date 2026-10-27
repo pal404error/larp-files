@@ -43,7 +43,7 @@ limitations (per-record compression is modest on short records) are in
 ## Try it in 60 seconds
 
 ```bash
-cargo install --path .   # or: cargo install larp (once on crates.io)
+cargo install --path .   # or: cargo install larp-memory (once on crates.io)
 larp append --type fact --salience 0.9 "the user prefers rust"
 larp recall --max-tokens 2000 rust
 ```
