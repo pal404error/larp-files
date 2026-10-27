@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 380" width="100%" height="380">
+  <defs>
+    <linearGradient id="bc-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#161b22" />
+      <stop offset="100%" stop-color="#0d1117" />
+    </linearGradient>
+    <linearGradient id="bar-green" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#238636" />
+      <stop offset="100%" stop-color="#3fb950" />
+    </linearGradient>
+    <linearGradient id="bar-red" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#da3633" />
+      <stop offset="100%" stop-color="#f85149" />
+    </linearGradient>
+    <linearGradient id="bar-blue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1f6feb" />
+      <stop offset="100%" stop-color="#58a6ff" />
+    </linearGradient>
+    <linearGradient id="bar-purple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8957e5" />
+      <stop offset="100%" stop-color="#bc8cff" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="380" rx="14" fill="url(#bc-bg)" stroke="#30363d" stroke-width="1" />
+
+  <!-- Title & Context -->
+  <text x="36" y="42" fill="#f0f6fc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700">
+    Benchmark: 10,000 Records Measured Performance
+  </text>
+  <text x="36" y="66" fill="#8b949e" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13">
+    Real test from <tspan font-family="monospace">cargo run --release --example bench</tspan> — Token Budgeting vs Raw Dumps
+  </text>
+
+  <!-- Left Column: Context Window Token Cost -->
+  <g transform="translate(36, 100)">
+    <rect width="395" height="245" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1" />
+    <text x="20" y="32" fill="#f0f6fc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="600">
+      Context Window Ingestion (Tokens)
+    </text>
+    <text x="20" y="52" fill="#8b949e" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12">
+      Tokens consumed per session start
+    </text>
+
+    <!-- Bar 1: Markdown dump -->
+    <text x="20" y="90" fill="#f0f6fc" font-family="ui-monospace, monospace" font-size="12">Full Markdown Dump</text>
+    <rect x="20" y="100" width="355" height="26" rx="4" fill="url(#bar-red)" opacity="0.85" />
+    <text x="365" y="118" fill="#ffffff" font-family="ui-monospace, monospace" font-size="12" font-weight="bold" text-anchor="end">~287,000 tokens</text>
+
+    <!-- Bar 2: .larp recall -->
+    <text x="20" y="156" fill="#f0f6fc" font-family="ui-monospace, monospace" font-size="12">.larp Budgeted Recall (2k limit)</text>
+    <rect x="20" y="166" width="32" height="26" rx="4" fill="url(#bar-green)" />
+    <text x="62" y="184" fill="#3fb950" font-family="ui-monospace, monospace" font-size="12" font-weight="bold">1,991 tokens (181 records)</text>
+
+    <!-- Highlight Callout -->
+    <rect x="20" y="206" width="355" height="26" rx="4" fill="#238636" fill-opacity="0.15" stroke="#238636" stroke-width="0.8" />
+    <text x="197" y="223" fill="#3fb950" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="700" text-anchor="middle">
+      ⚡ 99.3% Context Window Savings
+    </text>
+  </g>
+
+  <!-- Right Column: Storage Size & Sub-millisecond Latencies -->
+  <g transform="translate(469, 100)">
+    <rect width="395" height="245" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1" />
+    <text x="20" y="32" fill="#f0f6fc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="600">
+      Disk Storage &amp; Latency Profile
+    </text>
+    <text x="20" y="52" fill="#8b949e" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12">
+      10,000 memories in a single portable file
+    </text>
+
+    <!-- File Size Bars -->
+    <g transform="translate(20, 72)">
+      <!-- JSONL -->
+      <text x="0" y="14" fill="#8b949e" font-family="ui-monospace, monospace" font-size="11">JSONL (1.21 MB)</text>
+      <rect x="130" y="2" width="225" height="15" rx="3" fill="#30363d" />
+
+      <!-- Markdown -->
+      <text x="0" y="38" fill="#8b949e" font-family="ui-monospace, monospace" font-size="11">Markdown (1.15 MB)</text>
+      <rect x="130" y="26" width="213" height="15" rx="3" fill="#30363d" />
+
+      <!-- .larp -->
+      <text x="0" y="62" fill="#58a6ff" font-family="ui-monospace, monospace" font-size="11" font-weight="bold">.larp v2 (1.04 MB)</text>
+      <rect x="130" y="50" width="194" height="15" rx="3" fill="url(#bar-blue)" />
+    </g>
+
+    <!-- Latency Grid -->
+    <g transform="translate(20, 160)">
+      <line x1="0" y1="0" x2="355" y2="0" stroke="#21262d" stroke-width="1" />
+      
+      <!-- Metric 1 -->
+      <text x="0" y="24" fill="#8b949e" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11">Recall Latency</text>
+      <text x="0" y="46" fill="#3fb950" font-family="ui-monospace, monospace" font-size="18" font-weight="bold">0.70 ms</text>
+
+      <!-- Metric 2 -->
+      <text x="125" y="24" fill="#8b949e" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11">Search Latency</text>
+      <text x="125" y="46" fill="#58a6ff" font-family="ui-monospace, monospace" font-size="18" font-weight="bold">0.85 ms</text>
+
+      <!-- Metric 3 -->
+      <text x="250" y="24" fill="#8b949e" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11">10k Bulk Write</text>
+      <text x="250" y="46" fill="#bc8cff" font-family="ui-monospace, monospace" font-size="18" font-weight="bold">56–89 ms</text>
+    </g>
+  </g>
+</svg>
