@@ -1186,6 +1186,216 @@ pub fn dump_markdown(records: &[Record]) -> String {
     out
 }
 
+// ---------- Verify, repair, create ----------
+
+/// Result of a full integrity check of a .larp file.
+pub struct VerifyReport {
+    /// Format version found in the header (current version when the
+    /// file does not exist yet).
+    pub version: u16,
+    pub file_size: u64,
+    pub total_records: usize,
+    pub live_records: usize,
+    /// True when bytes past the last valid frame failed to parse.
+    pub torn: bool,
+    /// Bytes past the last valid frame (0 unless torn).
+    pub bad_bytes: u64,
+}
+
+/// Check a file end to end: header, every frame's CRC, and that every
+/// payload decodes. Read-only; never modifies the file. A missing file
+/// verifies as an empty, healthy one (appends would create it).
+pub fn verify_file(path: &Path) -> Result<VerifyReport, String> {
+    let size = match std::fs::metadata(path) {
+        Ok(m) => m.len(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(VerifyReport {
+                version: FORMAT_VERSION,
+                file_size: 0,
+                total_records: 0,
+                live_records: 0,
+                torn: false,
+                bad_bytes: 0,
+            });
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+    let data = read_file(path)?;
+    let bad_bytes = if data.torn {
+        size.saturating_sub(data.good_len as u64)
+    } else {
+        0
+    };
+    Ok(VerifyReport {
+        version: data.version,
+        file_size: size,
+        total_records: data.records.len(),
+        live_records: live_records(&data.records, now_unix()).len(),
+        torn: data.torn,
+        bad_bytes,
+    })
+}
+
+/// Result of a repair: how much was cut away and what remains.
+pub struct RepairReport {
+    pub bytes_removed: u64,
+    pub records_kept: usize,
+    pub was_torn: bool,
+}
+
+/// Truncate a torn/corrupt tail back to the last valid frame, under the
+/// same advisory lock appends take. A healthy file is left untouched.
+/// The records in the tail were already unreadable; repair makes the
+/// file end exactly where the valid data ends, so the file's state is
+/// explicit instead of depending on the next append to clean it up.
+pub fn repair_file(path: &Path) -> Result<RepairReport, String> {
+    let _guard = acquire_lock(path)?;
+    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let data = read_file(path)?;
+    if !data.torn {
+        return Ok(RepairReport {
+            bytes_removed: 0,
+            records_kept: data.records.len(),
+            was_torn: false,
+        });
+    }
+    let f = OpenOptions::new()
+        .write(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    f.set_len(data.good_len as u64).map_err(|e| e.to_string())?;
+    f.sync_data().map_err(|e| e.to_string())?;
+    Ok(RepairReport {
+        bytes_removed: size.saturating_sub(data.good_len as u64),
+        records_kept: data.records.len(),
+        was_torn: true,
+    })
+}
+
+/// Create an empty v3 file (header only) if none exists yet. Returns
+/// true when the file was created, false when a valid file was already
+/// there (left untouched). Errors when an existing non-empty file is
+/// not a readable .larp file, so `init` fails loudly instead of
+/// papering over someone else's data.
+pub fn create_file(path: &Path) -> Result<bool, String> {
+    let _guard = acquire_lock(path)?;
+    match std::fs::metadata(path) {
+        Ok(m) if m.len() > 0 => {
+            read_file(path)?;
+            return Ok(false);
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    write_bytes_atomic(path, &header_bytes())?;
+    Ok(true)
+}
+
+// ---------- Markdown import ----------
+
+/// One memory extracted from a Markdown document: the block text and the
+/// tag derived from the heading it sat under (None before any heading).
+pub struct MarkdownMemory {
+    pub text: String,
+    pub tag: Option<String>,
+}
+
+/// Slugify a heading into a tag: lowercase, runs of non-alphanumerics
+/// become single dashes, edges trimmed. "Project Notes!" -> "project-notes".
+fn heading_tag(heading: &str) -> Option<String> {
+    let mut slug = String::new();
+    let mut last_dash = true; // also trims leading dashes
+    for c in heading.chars() {
+        if c.is_alphanumeric() {
+            slug.extend(c.to_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    if slug.is_empty() {
+        None
+    } else {
+        Some(slug)
+    }
+}
+
+fn flush_block(block: &mut Vec<String>, tag: &Option<String>, out: &mut Vec<MarkdownMemory>) {
+    if block.is_empty() {
+        return;
+    }
+    let text = block.join(" ").trim().to_string();
+    block.clear();
+    if text.is_empty() || ["---", "***", "___"].contains(&text.as_str()) {
+        return;
+    }
+    out.push(MarkdownMemory {
+        text,
+        tag: tag.clone(),
+    });
+}
+
+/// Split a Markdown document into memories. Each blank-line-separated
+/// block becomes one memory, tagged with the current heading; each list
+/// item is its own memory. Fenced code blocks, horizontal rules, and
+/// the headings themselves are skipped; one level of list or blockquote
+/// marker is stripped. Plain text works too (e.g. .cursorrules): with
+/// no headings, blocks simply carry no tag.
+pub fn parse_markdown(md: &str) -> Vec<MarkdownMemory> {
+    let mut out = Vec::new();
+    let mut tag: Option<String> = None;
+    let mut in_fence = false;
+    let mut block: Vec<String> = Vec::new();
+    for line in md.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            flush_block(&mut block, &tag, &mut out);
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if trimmed.starts_with('#') {
+            flush_block(&mut block, &tag, &mut out);
+            tag = heading_tag(trimmed.trim_start_matches('#').trim());
+            continue;
+        }
+        if trimmed.is_empty() {
+            flush_block(&mut block, &tag, &mut out);
+            continue;
+        }
+        let mut s = trimmed;
+        let mut is_list = false;
+        for marker in ["- ", "* ", "+ "] {
+            if let Some(rest) = s.strip_prefix(marker) {
+                s = rest;
+                is_list = true;
+                break;
+            }
+        }
+        if let Some(rest) = s.strip_prefix("> ") {
+            s = rest;
+        }
+        if is_list {
+            // Each list item is its own memory; it never joins the
+            // surrounding prose block.
+            flush_block(&mut block, &tag, &mut out);
+            block.push(s.to_string());
+            flush_block(&mut block, &tag, &mut out);
+        } else {
+            block.push(s.to_string());
+        }
+    }
+    flush_block(&mut block, &tag, &mut out);
+    out
+}
+
 // ---------- JSONL interchange ----------
 
 use serde::{Deserialize, Serialize};

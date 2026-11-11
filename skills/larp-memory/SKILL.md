@@ -47,10 +47,14 @@ Cursor, VS Code, Codex, and opencode configs). The server command is
 ## CLI equivalents
 
 ```bash
+larp init --client claude   # create the file and write the MCP config
 larp append --type fact --salience 0.9 "the user prefers rust"
 larp recall --max-tokens 2000 rust
 larp stats        # counts, size, live vs superseded, token estimate
 larp compact      # drop expired/superseded records
+larp verify       # CRC-check every frame (nonzero exit if torn)
+larp repair       # truncate a torn tail back to the last valid frame
+larp import-md CLAUDE.md   # one record per block, tagged by heading
 ```
 
 ## Rules

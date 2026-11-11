@@ -9,11 +9,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
 
 ### Planned
 - **Block-compressed segments:** Optional segment chunking to exploit cross-record redundancy while maintaining fast single-record seek.
-- **Direct import converters:** Turn existing `CLAUDE.md`, `.cursorrules`, and markdown memory dumps directly into indexed `.larp` files in one command.
 - **Semantic recall:** Local embeddings mixed with BM25. The relevance
   tests document the current gap (paraphrases with no shared words are
   not found); this needs a model download, so it stays future work for
   an offline-first crate.
+
+---
+
+## [1.3.0] — 2026-11-12
+
+### Added
+- **`larp init`:** creates the memory file and wires up the agent in
+  one step — `--client claude` writes or merges `.mcp.json`,
+  `--client cursor` writes or merges `.cursor/mcp.json`, `--client
+  codex` prints the TOML snippet. Existing configs are never clobbered:
+  an unparseable config is left alone and the entry is printed to paste
+  manually.
+- **`larp verify` / `larp repair`:** verify CRC-checks every frame and
+  reports a torn tail (nonzero exit, so scripts can gate on it); repair
+  truncates the tail back to the last valid frame under the advisory
+  lock. Healthy files are untouched by either command.
+- **`larp import-md <file.md>`:** imports Markdown memory files —
+  `CLAUDE.md`, `.cursorrules`, plain notes — one record per blank-line
+  block, tagged with the heading it sat under; fenced code blocks are
+  skipped and near-duplicates are not stored twice.
+- **Shell completions** for the new commands in bash, zsh, and fish.
+
+### Fixed
+- **README corrections:** the MCP section now lists all five tools
+  (`remember`, `recall`, `forget`, `list`, `stats`), the crates.io badge
+  is replaced by a GitHub release badge, and the quickstart covers
+  tags/meta, dedup, and the new commands.
 
 ---
 

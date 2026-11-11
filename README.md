@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/pal404error/larp-files/actions/workflows/tests.yml"><img src="https://github.com/pal404error/larp-files/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="https://github.com/pal404error/larp-files/actions/workflows/benchmarks.yml"><img src="https://github.com/pal404error/larp-files/actions/workflows/benchmarks.yml/badge.svg" alt="Benchmarks"></a>
-  <a href="https://crates.io/crates/larp-memory"><img src="https://img.shields.io/badge/crates.io-v1.1.0-orange.svg" alt="crates.io"></a>
+  <a href="https://github.com/pal404error/larp-files/releases"><img src="https://img.shields.io/github/v/release/pal404error/larp-files" alt="latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/MCP-compatible-purple.svg" alt="Model Context Protocol">
   <img src="https://img.shields.io/badge/local--first-zero--daemon-brightgreen.svg" alt="Local First">
@@ -60,13 +60,18 @@ cargo install --path .
 Run real commands right away (defaults to `memory.larp` in the current directory, or use `--file <path>`):
 
 ```bash
+# 0. Set up: create the file and wire up your agent in one step
+larp init --client claude            # also: cursor, codex, or none
+
 # 1. Store memories
 larp append --type fact --salience 0.9 "the user prefers rust"
 larp append --type preference "likes short answers"
 larp append --type episode "configured production deployment"
+larp append --type fact --tag project --meta source=cli "uses Rust 1.99"
 
 # 2. Recall only what fits your token budget (scored by relevance & recency)
 larp recall --max-tokens 2000 rust
+larp recall --tag project rust       # filter by tag
 
 # 3. Supersede a previous memory with a correction (audit history preserved)
 larp append --type correction --supersedes 1 "the user prefers rust and python"
@@ -77,7 +82,14 @@ larp dump                            # render live memories as Markdown
 larp compact                         # safely purge superseded/expired records
 larp export > memory.jsonl           # JSONL interchange
 larp import memory.jsonl             # merge or restore
+
+# 5. Migrate from Markdown memory files, and check file health
+larp import-md CLAUDE.md            # one record per block, tagged by heading
+larp verify                          # CRC-check every frame
+larp repair                          # truncate a torn tail back to valid data
 ```
+
+Re-appending a memory you already stored is a no-op: `larp` reports `already stored as #N` instead of saving a duplicate.
 
 ---
 
@@ -99,10 +111,12 @@ cp completions/larp.fish ~/.config/fish/completions/
 
 ### Option A: As an MCP Server (Model Context Protocol)
 
-`larp mcp` speaks standard JSON-RPC 2.0 over stdio and exposes three tools:
-- `remember(text, type, salience, ttl_secs)` — append a memory
-- `recall(query, max_tokens)` — retrieve best memories within a token budget
+`larp mcp` speaks standard JSON-RPC 2.0 over stdio and exposes five tools:
+- `remember(text, type, salience, ttl_secs, supersedes, tags, meta)` — append a memory
+- `recall(query, max_tokens, tag)` — retrieve best memories within a token budget, optionally filtered by tag
 - `forget(id)` — supersede a memory while keeping history auditable
+- `list()` — all live memories
+- `stats()` — counts, sizes, live vs superseded
 
 Add it to your client configuration:
 

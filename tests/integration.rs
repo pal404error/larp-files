@@ -1,6 +1,7 @@
 use larp_memory::{
-    append_record, compact, crc32, export_jsonl, import_jsonl, live_records, now_unix, read_file,
-    recall, recall_tagged, search, search_tagged, Record, RecordType,
+    append_record, compact, crc32, create_file, export_jsonl, import_jsonl, live_records, now_unix,
+    parse_markdown, read_file, recall, recall_tagged, repair_file, search, search_tagged,
+    verify_file, Record, RecordType,
 };
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -639,4 +640,180 @@ fn stats_reports_counts() {
     );
     assert!(text.contains("live_tokens_est: "), "{text}");
     let _ = std::fs::remove_file(&f);
+}
+
+#[test]
+fn verify_and_repair_torn_tail() {
+    let f = tmpfile("verify");
+    append_record(&f, rec("first memory", 0.9)).unwrap();
+    append_record(&f, rec("second memory", 0.9)).unwrap();
+    // Garbage tail, as a crashed writer might leave.
+    let mut fh = OpenOptions::new().append(true).open(&f).unwrap();
+    fh.write_all(b"\xff\xff\xffpartial").unwrap();
+    drop(fh);
+    let report = verify_file(&f).unwrap();
+    assert!(report.torn);
+    assert_eq!(report.total_records, 2);
+    assert_eq!(report.live_records, 2);
+    assert!(report.bad_bytes > 0);
+    let fixed = repair_file(&f).unwrap();
+    assert!(fixed.was_torn);
+    assert_eq!(fixed.records_kept, 2);
+    assert!(fixed.bytes_removed > 0);
+    let after = verify_file(&f).unwrap();
+    assert!(!after.torn);
+    assert_eq!(after.bad_bytes, 0);
+    // The file accepts appends again, with the next id (no repeat).
+    let id = append_record(&f, rec("third memory", 0.9)).unwrap();
+    assert_eq!(id, 3);
+    let _ = std::fs::remove_file(&f);
+}
+
+#[test]
+fn repair_healthy_file_is_a_noop() {
+    let f = tmpfile("repair-healthy");
+    append_record(&f, rec("only memory", 0.9)).unwrap();
+    let fixed = repair_file(&f).unwrap();
+    assert!(!fixed.was_torn);
+    assert_eq!(fixed.bytes_removed, 0);
+    assert_eq!(fixed.records_kept, 1);
+    let _ = std::fs::remove_file(&f);
+}
+
+#[test]
+fn create_file_makes_empty_valid_file() {
+    let f = tmpfile("create");
+    assert!(create_file(&f).unwrap());
+    assert!(!create_file(&f).unwrap());
+    let data = read_file(&f).unwrap();
+    assert_eq!(data.version, 3);
+    assert!(data.records.is_empty());
+    let id = append_record(&f, rec("after init", 0.5)).unwrap();
+    assert_eq!(id, 1);
+    let _ = std::fs::remove_file(&f);
+}
+
+#[test]
+fn parse_markdown_blocks_tags_and_fences() {
+    let md = "# Preferences\n\n- prefers rust\n- likes short answers\n\nSome prose paragraph\nspanning two lines.\n\n```\ncode is not a memory\n```\n\n## Travel\n\nHome base is Ottawa.\n";
+    let mems = parse_markdown(md);
+    assert_eq!(mems.len(), 4);
+    assert_eq!(mems[0].text, "prefers rust");
+    assert_eq!(mems[0].tag.as_deref(), Some("preferences"));
+    assert_eq!(mems[1].text, "likes short answers");
+    assert_eq!(mems[2].text, "Some prose paragraph spanning two lines.");
+    assert_eq!(mems[2].tag.as_deref(), Some("preferences"));
+    assert_eq!(mems[3].text, "Home base is Ottawa.");
+    assert_eq!(mems[3].tag.as_deref(), Some("travel"));
+}
+
+#[test]
+fn parse_markdown_plain_text_has_no_tags() {
+    let mems = parse_markdown("first line of a rule\n\nsecond rule here\n");
+    assert_eq!(mems.len(), 2);
+    assert!(mems.iter().all(|m| m.tag.is_none()));
+}
+
+#[test]
+fn cli_init_verify_repair_import_md() {
+    let dir = std::env::temp_dir().join(format!("larp-cli-130-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("memory.larp");
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let run = |args: &[&str]| -> std::process::Output {
+        Command::new(bin)
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    // init creates the file and a claude .mcp.json in the cwd.
+    let out = run(&["--file", f.to_str().unwrap(), "init", "--client", "claude"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(f.exists());
+    let cfg = std::fs::read_to_string(dir.join(".mcp.json")).unwrap();
+    assert!(cfg.contains("larp-memory"), "{cfg}");
+    assert!(cfg.contains("memory.larp"), "{cfg}");
+    // verify on a healthy file succeeds and says ok.
+    let out = run(&["--file", f.to_str().unwrap(), "verify"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .contains("status: ok"),
+        "verify should report ok"
+    );
+    // import-md: one record per block, tagged by heading, duplicates skipped.
+    let md = dir.join("notes.md");
+    std::fs::write(
+        &md,
+        "# Preferences\n\n- prefers rust\n\n## Travel\n\nHome base is Ottawa.\n",
+    )
+    .unwrap();
+    let out = run(&[
+        "--file",
+        f.to_str().unwrap(),
+        "import-md",
+        md.to_str().unwrap(),
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("imported 2 records"), "{text}");
+    let out = run(&[
+        "--file",
+        f.to_str().unwrap(),
+        "import-md",
+        md.to_str().unwrap(),
+    ]);
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .contains("2 duplicates skipped"),
+        "second import must skip duplicates"
+    );
+    let data = read_file(&f).unwrap();
+    assert_eq!(data.records.len(), 2);
+    assert_eq!(data.records[0].tags, vec!["preferences".to_string()]);
+    assert_eq!(data.records[1].tags, vec!["travel".to_string()]);
+    // repair on the healthy file is a no-op; corrupt it, then repair works.
+    let out = run(&["--file", f.to_str().unwrap(), "repair"]);
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .contains("nothing to repair"),
+        "repair on a healthy file must be a no-op"
+    );
+    let mut fh = OpenOptions::new().append(true).open(&f).unwrap();
+    fh.write_all(b"garbage tail").unwrap();
+    drop(fh);
+    let out = run(&["--file", f.to_str().unwrap(), "verify"]);
+    assert!(!out.status.success(), "verify must fail on a torn file");
+    let out = run(&["--file", f.to_str().unwrap(), "repair"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stdout).unwrap().contains("repaired:"),
+        "repair must report the truncation"
+    );
+    let out = run(&["--file", f.to_str().unwrap(), "verify"]);
+    assert!(out.status.success());
+    let _ = std::fs::remove_dir_all(&dir);
 }

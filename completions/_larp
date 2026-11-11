@@ -11,8 +11,12 @@ _larp() {
     'recall:Recall within a token budget'
     'compact:Drop expired/superseded records'
     'import:Import JSONL'
+    'import-md:Import a Markdown file'
     'export:Export JSONL'
     'stats:Show file statistics'
+    'init:Create memory file and client config'
+    'verify:Check file integrity'
+    'repair:Truncate a torn tail'
     'mcp:Run the MCP server'
   )
   _arguments -C \
@@ -28,6 +32,8 @@ _larp() {
         append) _arguments '--type[type]:type:(fact preference episode correction)' '--salience[salience]' '--ttl[TTL seconds]' '--supersedes[superseded id]' ;;
         recall) _arguments '--max-tokens[max tokens]' ;;
         export) _arguments '--live[Live records only]' ;;
+        init) _arguments '--client[client]:client:(claude cursor codex none)' ;;
+        import-md) _arguments '--type[type]:type:(fact preference episode correction)' ;;
       esac
       ;;
   esac

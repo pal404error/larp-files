@@ -5,9 +5,9 @@
 mod mcp;
 
 use larp_memory::{
-    append_record, compact, dump_markdown, export_jsonl, find_duplicate, import_jsonl,
-    live_records, now_unix, read_file, recall, recall_tagged, search, search_tagged, stats_text,
-    Record, RecordType,
+    append_record, compact, create_file, dump_markdown, export_jsonl, find_duplicate, import_jsonl,
+    live_records, now_unix, parse_markdown, read_file, recall, recall_tagged, repair_file, search,
+    search_tagged, stats_text, verify_file, Record, RecordType,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -24,7 +24,11 @@ fn usage() -> &'static str {
      \x20 compact\n\
      \x20 stats\n\
      \x20 import <path.jsonl>|-\n\
+     \x20 import-md [--type <fact|preference|episode|correction>] <path.md>\n\
      \x20 export [--live]\n\
+     \x20 init [--client <claude|cursor|codex|none>]\n\
+     \x20 verify\n\
+     \x20 repair\n\
      \x20 mcp"
 }
 
@@ -292,10 +296,186 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
             print!("{}", export_jsonl(&records)?);
             Ok(())
         }
+        "verify" => {
+            let r = verify_file(file)?;
+            println!("file: {}", file.display());
+            println!("format_version: {}", r.version);
+            println!("file_size_bytes: {}", r.file_size);
+            println!("records: {} ({} live)", r.total_records, r.live_records);
+            if r.torn {
+                println!(
+                    "status: TORN — {} bad bytes past the last valid frame",
+                    r.bad_bytes
+                );
+                return Err("torn/corrupt tail found; run `larp repair` to truncate it".to_string());
+            }
+            println!("status: ok");
+            Ok(())
+        }
+        "repair" => {
+            let r = repair_file(file)?;
+            if r.was_torn {
+                println!(
+                    "repaired: removed {} bad bytes; {} records kept",
+                    r.bytes_removed, r.records_kept
+                );
+            } else {
+                println!(
+                    "nothing to repair: file is healthy ({} records)",
+                    r.records_kept
+                );
+            }
+            Ok(())
+        }
+        "init" => {
+            let client = flag_value(rest, "--client").unwrap_or_else(|| "none".to_string());
+            let created = create_file(file)?;
+            println!(
+                "{} memory file: {}",
+                if created { "created" } else { "exists" },
+                file.display()
+            );
+            let abs = std::fs::canonicalize(file)
+                .unwrap_or_else(|_| file.to_path_buf())
+                .display()
+                .to_string();
+            match client.as_str() {
+                "claude" => {
+                    match write_mcp_json(&PathBuf::from(".mcp.json"), &abs) {
+                        Ok(msg) => println!("{msg}"),
+                        Err(msg) => eprintln!("warning: {msg}"),
+                    }
+                    println!("or run: claude mcp add larp-memory -- larp mcp --file {abs}");
+                }
+                "cursor" => match write_mcp_json(&PathBuf::from(".cursor/mcp.json"), &abs) {
+                    Ok(msg) => println!("{msg}"),
+                    Err(msg) => eprintln!("warning: {msg}"),
+                },
+                "codex" => {
+                    println!("add to ~/.codex/config.toml:");
+                    println!("[mcp_servers.larp-memory]");
+                    println!("command = \"larp\"");
+                    println!("args = [\"mcp\", \"--file\", \"{abs}\"]");
+                }
+                "none" => {
+                    println!("connect your agent:");
+                    println!("{{\"mcpServers\": {{\"larp-memory\": {{\"command\": \"larp\", \"args\": [\"mcp\", \"--file\", \"{abs}\"]}}}}}}");
+                }
+                other => {
+                    return Err(format!(
+                        "unknown --client '{other}' (claude|cursor|codex|none)"
+                    ));
+                }
+            }
+            Ok(())
+        }
+        "import-md" => {
+            let rtype = flag_value(rest, "--type")
+                .and_then(|t| RecordType::parse(&t))
+                .unwrap_or(RecordType::Fact);
+            let mut src: Option<&String> = None;
+            let mut j = 0;
+            while j < rest.len() {
+                if rest[j] == "--type" {
+                    j += 2;
+                } else if src.is_none() {
+                    src = Some(&rest[j]);
+                    j += 1;
+                } else {
+                    j += 1;
+                }
+            }
+            let Some(src) = src else {
+                return Err("import-md needs a Markdown file path".to_string());
+            };
+            let input = std::fs::read_to_string(src).map_err(|e| e.to_string())?;
+            let memories = parse_markdown(&input);
+            if memories.is_empty() {
+                println!("no memories found in {src}");
+                return Ok(());
+            }
+            let mut imported = 0usize;
+            let mut duplicates = 0usize;
+            for m in &memories {
+                let data = read_file(file)?;
+                if find_duplicate(&data.records, rtype, &m.text, now_unix()).is_some() {
+                    duplicates += 1;
+                    continue;
+                }
+                let mut record = Record::new(rtype, 0.5, 0, m.text.clone());
+                if let Some(t) = &m.tag {
+                    record.tags.push(t.clone());
+                }
+                append_record(file, record)?;
+                imported += 1;
+            }
+            println!("imported {imported} records from {src} ({duplicates} duplicates skipped)");
+            Ok(())
+        }
         "mcp" => mcp::run(file),
         _ => {
             let _ = has_flag;
             Err(format!("unknown command: {cmd}\n{}", usage()))
         }
     }
+}
+
+/// Add (or refresh) the larp-memory server entry in an MCP JSON config
+/// file (`.mcp.json` shape: `{"mcpServers": {"larp-memory": {...}}}`).
+/// Creates the file and parent directories when missing. Returns a
+/// message describing what happened. An existing config that is not a
+/// valid JSON object is never clobbered: the entry is returned as text
+/// to paste manually instead.
+fn write_mcp_json(path: &Path, file_abs: &str) -> Result<String, String> {
+    let entry = serde_json::json!({
+        "command": "larp",
+        "args": ["mcp", "--file", file_abs],
+    });
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+    let mut root = if path.exists() {
+        let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(v) => v,
+            Err(_) => {
+                let snippet = serde_json::to_string_pretty(&serde_json::json!({
+                    "mcpServers": { "larp-memory": entry }
+                }))
+                .unwrap_or_default();
+                return Err(format!(
+                    "{} exists but is not valid JSON; not modified.\nAdd this entry manually:\n{}",
+                    path.display(),
+                    snippet
+                ));
+            }
+        }
+    } else {
+        serde_json::json!({})
+    };
+    if !root.is_object() {
+        return Err(format!(
+            "{} is not a JSON object; not modified.",
+            path.display()
+        ));
+    }
+    let servers = root
+        .as_object_mut()
+        .unwrap()
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    let action = if servers.get("larp-memory") == Some(&entry) {
+        "already configured"
+    } else {
+        servers
+            .as_object_mut()
+            .ok_or_else(|| "mcpServers is not an object".to_string())?
+            .insert("larp-memory".to_string(), entry);
+        "wrote"
+    };
+    let text = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(path, text + "\n").map_err(|e| e.to_string())?;
+    Ok(format!("{action} {}", path.display()))
 }
