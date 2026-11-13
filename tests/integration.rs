@@ -901,3 +901,39 @@ fn mcp_huge_ttl_is_recallable() {
     assert!(text.contains("must persist forever"), "{text}");
     let _ = std::fs::remove_file(&f);
 }
+
+/// LARP-04: imports preserve non-colliding ids, so frames can be out of id
+/// order. Appends must continue after the highest id, never reuse one.
+#[test]
+fn append_after_out_of_order_import_never_reuses_ids() {
+    let f = tmpfile("idreuse");
+    import_jsonl(
+        &f,
+        "{\"id\":10,\"type\":\"fact\",\"text\":\"ten\"}\n{\"id\":5,\"type\":\"fact\",\"text\":\"five\"}\n",
+    )
+    .unwrap();
+    let mut got = Vec::new();
+    for i in 0..5 {
+        got.push(append_record(&f, rec(&format!("new record {i}"), 0.5)).unwrap());
+    }
+    assert_eq!(got, vec![11, 12, 13, 14, 15]);
+    let data = read_file(&f).unwrap();
+    let mut ids: Vec<u64> = data.records.iter().map(|r| r.id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), data.records.len(), "ids must be unique");
+
+    // An id of u64::MAX is an error on the next append, not a panic or wrap.
+    let g = tmpfile("idmax");
+    import_jsonl(
+        &g,
+        &format!(
+            "{{\"id\":{},\"type\":\"fact\",\"text\":\"max\"}}\n",
+            u64::MAX
+        ),
+    )
+    .unwrap();
+    assert!(append_record(&g, rec("one more", 0.5)).is_err());
+    let _ = std::fs::remove_file(&f);
+    let _ = std::fs::remove_file(&g);
+}

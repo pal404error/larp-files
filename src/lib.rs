@@ -583,10 +583,14 @@ pub fn read_file(path: &Path) -> Result<FileData, String> {
 }
 
 /// Scan only v3 frame headers (CRC-checked, no decompression, no decoding).
-/// Returns (last good record id, good_len, torn). Used by the fast append
+/// Returns (highest good record id, good_len, torn). Used by the fast append
 /// path so appending no longer re-reads and unpacks the whole file.
+///
+/// The *highest* id, not the last one: imports preserve non-colliding ids,
+/// so frames are not always in id order. Using the last frame's id made
+/// later appends reuse ids that already existed.
 fn scan_v3_headers(bytes: &[u8]) -> (u64, usize, bool) {
-    let mut last_id = 0u64;
+    let mut max_id = 0u64;
     let mut off = 8usize;
     let mut good_len = 8usize;
     let mut torn = false;
@@ -638,11 +642,19 @@ fn scan_v3_headers(bytes: &[u8]) -> (u64, usize, bool) {
             torn = true;
             break;
         }
-        last_id = id;
+        max_id = max_id.max(id);
         off = p + len;
         good_len = off;
     }
-    (last_id, good_len, torn)
+    (max_id, good_len, torn)
+}
+
+/// The id after `max_id`, or an error once the id space is exhausted
+/// (a hostile or hand-edited file can hold id u64::MAX).
+fn next_record_id(max_id: u64) -> Result<u64, String> {
+    max_id
+        .checked_add(1)
+        .ok_or_else(|| "record id space exhausted (an id is u64::MAX)".to_string())
 }
 
 // ---------- Durable, locked writes ----------
@@ -766,7 +778,7 @@ fn append_inner(path: &Path, mut record: Record) -> Result<u64, String> {
         return Err(format!("unsupported .larp format version: {version}"));
     }
     if version == FORMAT_VERSION {
-        let (last_id, good_len, torn) = scan_v3_headers(&raw);
+        let (max_id, good_len, torn) = scan_v3_headers(&raw);
         if torn {
             // Cut back to the last good frame before appending, so the
             // new record is readable and its id does not collide.
@@ -777,7 +789,7 @@ fn append_inner(path: &Path, mut record: Record) -> Result<u64, String> {
             f.set_len(good_len as u64).map_err(|e| e.to_string())?;
             f.sync_data().map_err(|e| e.to_string())?;
         }
-        let next_id = last_id + 1;
+        let next_id = next_record_id(max_id)?;
         record.id = next_id;
         let frame = encode_frame_v3(&record)?;
         let mut f = OpenOptions::new()
@@ -791,7 +803,7 @@ fn append_inner(path: &Path, mut record: Record) -> Result<u64, String> {
     }
     // v1/v2: full read, then rewrite everything as v3 (torn tail dropped).
     let data = read_file(path)?;
-    let next_id = data.records.iter().map(|r| r.id).max().unwrap_or(0) + 1;
+    let next_id = next_record_id(data.records.iter().map(|r| r.id).max().unwrap_or(0))?;
     record.id = next_id;
     let mut all = data.records;
     all.push(record);
@@ -1497,13 +1509,13 @@ pub fn import_jsonl(path: &Path, input: &str) -> Result<Vec<u64>, String> {
     let _guard = acquire_lock(path)?;
     let existing = read_file(path)?;
     let mut used: HashSet<u64> = existing.records.iter().map(|r| r.id).collect();
-    let mut next_id = used.iter().max().copied().unwrap_or(0) + 1;
+    let mut next_id = next_record_id(used.iter().max().copied().unwrap_or(0))?;
     let mut id_map: HashMap<u64, u64> = HashMap::new();
     for r in &mut parsed {
         let old = r.id;
         if old == 0 || used.contains(&old) {
             let fresh = next_id;
-            next_id += 1;
+            next_id = next_record_id(next_id)?;
             if old != 0 {
                 id_map.insert(old, fresh);
             }
