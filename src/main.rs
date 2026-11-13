@@ -319,6 +319,9 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
                     "repaired: removed {} bad bytes; {} records kept",
                     r.bytes_removed, r.records_kept
                 );
+                if let Some(p) = &r.saved_to {
+                    println!("removed bytes saved to: {}", p.display());
+                }
             } else {
                 println!(
                     "nothing to repair: file is healthy ({} records)",

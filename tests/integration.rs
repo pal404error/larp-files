@@ -988,3 +988,35 @@ fn memory_files_are_private_and_rewrites_keep_permissions() {
     assert_eq!(mode, 0o640, "compact keeps the user's chosen mode");
     let _ = std::fs::remove_file(&f);
 }
+
+/// LARP-20: repair truncates at the first bad frame, which can sit in the
+/// middle of the file with valid records after it. The removed bytes must
+/// be saved, never destroyed outright.
+#[test]
+fn repair_saves_the_removed_tail() {
+    let f = tmpfile("repair-backup");
+    for i in 0..10 {
+        append_record(
+            &f,
+            rec(&format!("record number {i} distinct words {i}"), 0.5),
+        )
+        .unwrap();
+    }
+    let mut bytes = std::fs::read(&f).unwrap();
+    let mid = bytes.len() / 3;
+    bytes[mid] ^= 0x01; // one bit flip mid-file
+    std::fs::write(&f, &bytes).unwrap();
+    let report = repair_file(&f).unwrap();
+    assert!(report.was_torn);
+    let saved = report.saved_to.expect("backup path");
+    let backup = std::fs::read(&saved).unwrap();
+    let kept = std::fs::metadata(&f).unwrap().len() as usize;
+    assert_eq!(backup.len() as u64, report.bytes_removed);
+    assert_eq!(
+        &bytes[kept..],
+        &backup[..],
+        "backup holds exactly the removed bytes"
+    );
+    let _ = std::fs::remove_file(&saved);
+    let _ = std::fs::remove_file(&f);
+}

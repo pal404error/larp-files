@@ -1294,6 +1294,46 @@ pub struct RepairReport {
     pub bytes_removed: u64,
     pub records_kept: usize,
     pub was_torn: bool,
+    /// Where the removed bytes were saved before truncating (None when
+    /// nothing was removed).
+    pub saved_to: Option<PathBuf>,
+}
+
+/// Copy the bytes a repair is about to cut off into a sibling file
+/// `<file>.torn-<unix_ts>[-n]`, created exclusively (never overwriting).
+/// "Torn" bytes are not always a crash fragment: a single corrupt frame in
+/// the middle of a file, or a frame that passes its CRC but does not
+/// decode, makes every later (valid) record part of the tail. Keeping a
+/// copy means repair can never be the step that destroys them.
+fn save_removed_tail(path: &Path, tail: &[u8]) -> Result<PathBuf, String> {
+    let base = format!("{}.torn-{}", path.display(), now_unix());
+    for n in 0..100u32 {
+        let candidate = if n == 0 {
+            PathBuf::from(&base)
+        } else {
+            PathBuf::from(format!("{base}-{n}"))
+        };
+        let mut opts = OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        match opts.open(&candidate) {
+            Ok(mut f) => {
+                f.write_all(tail).map_err(|e| e.to_string())?;
+                f.sync_data().map_err(|e| e.to_string())?;
+                return Ok(candidate);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(format!(
+        "could not create a backup file next to {}",
+        path.display()
+    ))
 }
 
 /// Truncate a torn/corrupt tail back to the last valid frame, under the
@@ -1310,8 +1350,12 @@ pub fn repair_file(path: &Path) -> Result<RepairReport, String> {
             bytes_removed: 0,
             records_kept: data.records.len(),
             was_torn: false,
+            saved_to: None,
         });
     }
+    // Back up what is about to be cut off; abort the repair if that fails.
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let saved_to = save_removed_tail(path, bytes.get(data.good_len..).unwrap_or(&[]))?;
     let f = OpenOptions::new()
         .write(true)
         .open(path)
@@ -1322,6 +1366,7 @@ pub fn repair_file(path: &Path) -> Result<RepairReport, String> {
         bytes_removed: size.saturating_sub(data.good_len as u64),
         records_kept: data.records.len(),
         was_torn: true,
+        saved_to: Some(saved_to),
     })
 }
 
