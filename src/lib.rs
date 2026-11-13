@@ -234,7 +234,11 @@ impl Record {
     }
 
     pub fn expired(&self, now: i64) -> bool {
-        self.ttl_secs > 0 && now > self.timestamp + self.ttl_secs
+        // Saturating: timestamp and ttl come from files, imports and MCP
+        // input. A plain `+` panicked in debug builds (crashing the MCP
+        // server on every later call) and wrapped negative in release
+        // (a "keep forever" memory became instantly expired).
+        self.ttl_secs > 0 && now > self.timestamp.saturating_add(self.ttl_secs)
     }
 
     /// Rough token estimate for budgeting: ~4 chars per token.
@@ -915,7 +919,7 @@ fn span_matches(span: &str, term: &str) -> bool {
 fn type_decay(rtype: RecordType, timestamp: i64, now: i64) -> f64 {
     match rtype {
         RecordType::Episode => {
-            let age_days = ((now - timestamp).max(0) as f64) / 86_400.0;
+            let age_days = (now.saturating_sub(timestamp).max(0) as f64) / 86_400.0;
             0.5f64.powf(age_days / 90.0)
         }
         _ => 1.0,

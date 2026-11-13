@@ -842,3 +842,62 @@ fn oversized_record_is_rejected_before_it_can_hide_later_records() {
     assert_eq!(compact(&f).unwrap(), 2, "compact keeps everything");
     let _ = std::fs::remove_file(&f);
 }
+
+/// LARP-03: extreme ttl / timestamp values (MCP input, imports, hostile
+/// files) must neither panic (debug) nor wrap (release).
+#[test]
+fn extreme_ttl_and_timestamp_do_not_overflow() {
+    let f = tmpfile("overflow");
+    let keep = Record::new(RecordType::Fact, 0.9, i64::MAX, "keep forever".to_string());
+    append_record(&f, keep).unwrap();
+    import_jsonl(
+        &f,
+        &format!(
+            "{{\"type\":\"episode\",\"timestamp\":{},\"salience\":0.5,\"text\":\"ancient episode\"}}\n",
+            i64::MIN
+        ),
+    )
+    .unwrap();
+    let data = read_file(&f).unwrap();
+    let now = now_unix();
+    let live = live_records(&data.records, now);
+    assert!(
+        live.iter().any(|r| r.text == "keep forever"),
+        "huge ttl must mean 'not expired'"
+    );
+    let (picked, _) = recall(&data.records, "keep forever", 2000, now);
+    assert_eq!(picked.len(), 1);
+    let _ = search(&data.records, "", now); // type_decay on i64::MIN timestamp
+    let _ = std::fs::remove_file(&f);
+}
+
+/// LARP-03 via MCP: storing ttl_secs = i64::MAX must not crash the server,
+/// and the memory must be recallable afterwards.
+#[test]
+fn mcp_huge_ttl_is_recallable() {
+    let f = tmpfile("mcp-ttl");
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let mut child = Command::new(bin)
+        .arg("--file")
+        .arg(&f)
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = concat!(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"remember\",\"arguments\":{\"text\":\"must persist forever\",\"ttl_secs\":9223372036854775807}}}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"recall\",\"arguments\":{\"query\":\"persist\"}}}\n",
+    );
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "server must not panic");
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("must persist forever"), "{text}");
+    let _ = std::fs::remove_file(&f);
+}
