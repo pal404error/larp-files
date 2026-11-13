@@ -1123,3 +1123,68 @@ fn mcp_list_is_newest_first() {
     assert!(body.contains("newest memory omega"), "{body}");
     let _ = std::fs::remove_file(&f);
 }
+
+/// LARP-12: unknown types and unparsable numbers are errors, not silent
+/// defaults (a mistyped --supersedes used to store a correction that
+/// superseded nothing).
+#[test]
+fn invalid_cli_and_mcp_arguments_are_rejected() {
+    let f = tmpfile("badargs");
+    let bin = env!("CARGO_BIN_EXE_larp");
+    append_record(&f, rec("original fact", 0.5)).unwrap();
+    for args in [
+        vec!["append", "--type", "nonsense", "some text"],
+        vec![
+            "append",
+            "--type",
+            "correction",
+            "--supersedes",
+            "abc",
+            "fixed text",
+        ],
+        vec!["append", "--salience", "high", "more text"],
+        vec!["append", "--ttl", "soon", "even more text"],
+        vec!["recall", "--max-tokens", "lots", "rust"],
+        vec!["import-md", "--type", "nonsense", "Cargo.toml"],
+    ] {
+        let out = Command::new(bin)
+            .arg("--file")
+            .arg(&f)
+            .args(&args)
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{args:?} must fail");
+    }
+    assert_eq!(read_file(&f).unwrap().records.len(), 1, "nothing stored");
+
+    let mut child = Command::new(bin)
+        .arg("--file")
+        .arg(&f)
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = concat!(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"remember\",\"arguments\":{\"text\":\"typed wrong\",\"type\":\"nonsense\"}}}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"remember\",\"arguments\":{\"text\":\"fixed\",\"type\":\"correction\",\"supersedes\":\"abc\"}}}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"remember\",\"arguments\":{\"text\":\"valid one\",\"type\":\"preference\"}}}\n",
+    );
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    let replies: Vec<serde_json::Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(replies[0]["result"]["isError"], true);
+    assert_eq!(replies[1]["result"]["isError"], true);
+    assert!(replies[2]["result"]["isError"].is_null());
+    assert_eq!(read_file(&f).unwrap().records.len(), 2);
+    let _ = std::fs::remove_file(&f);
+}

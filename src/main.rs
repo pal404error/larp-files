@@ -36,6 +36,18 @@ fn flag_value(args: &[String], name: &str) -> Option<String> {
     args.windows(2).find(|w| w[0] == name).map(|w| w[1].clone())
 }
 
+/// Parse an optional flag value. A flag that is present but unparsable is
+/// an error instead of silently becoming the default (e.g. a mistyped
+/// `--supersedes` used to store a correction that superseded nothing).
+fn parse_flag<T: std::str::FromStr>(args: &[String], name: &str, default: T) -> Result<T, String> {
+    match flag_value(args, name) {
+        Some(v) => v
+            .parse()
+            .map_err(|_| format!("invalid value for {name}: '{v}'")),
+        None => Ok(default),
+    }
+}
+
 fn flag_values(args: &[String], name: &str) -> Vec<String> {
     args.windows(2)
         .filter(|w| w[0] == name)
@@ -104,21 +116,20 @@ fn main() -> ExitCode {
 fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
     match cmd {
         "append" => {
-            let rtype = flag_value(rest, "--type")
-                .and_then(|t| RecordType::parse(&t))
-                .unwrap_or(RecordType::Fact);
-            let salience: f32 = flag_value(rest, "--salience")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.5);
+            let rtype = match flag_value(rest, "--type") {
+                Some(t) => RecordType::parse(&t).ok_or_else(|| {
+                    format!(
+                        "unknown --type '{t}' (expected fact, preference, episode or correction)"
+                    )
+                })?,
+                None => RecordType::Fact,
+            };
+            let salience: f32 = parse_flag(rest, "--salience", 0.5)?;
             if !salience.is_finite() {
                 return Err("salience must be finite (not NaN or infinite)".to_string());
             }
-            let ttl: i64 = flag_value(rest, "--ttl")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
-            let supersedes: u64 = flag_value(rest, "--supersedes")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
+            let ttl: i64 = parse_flag(rest, "--ttl", 0)?;
+            let supersedes: u64 = parse_flag(rest, "--supersedes", 0)?;
             let tags = flag_values(rest, "--tag");
             let mut meta = Vec::new();
             for m in flag_values(rest, "--meta") {
@@ -210,9 +221,7 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         "recall" => {
-            let max_tokens: usize = flag_value(rest, "--max-tokens")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(2000);
+            let max_tokens: usize = parse_flag(rest, "--max-tokens", 2000)?;
             let tag = flag_value(rest, "--tag");
             // Drop the flags and their values; the rest is the query.
             let mut qparts: Vec<String> = Vec::new();
@@ -369,9 +378,14 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         "import-md" => {
-            let rtype = flag_value(rest, "--type")
-                .and_then(|t| RecordType::parse(&t))
-                .unwrap_or(RecordType::Fact);
+            let rtype = match flag_value(rest, "--type") {
+                Some(t) => RecordType::parse(&t).ok_or_else(|| {
+                    format!(
+                        "unknown --type '{t}' (expected fact, preference, episode or correction)"
+                    )
+                })?,
+                None => RecordType::Fact,
+            };
             let mut src: Option<&String> = None;
             let mut j = 0;
             while j < rest.len() {

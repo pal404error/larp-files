@@ -122,6 +122,15 @@ fn arg_u64(args: &Value, name: &str) -> Option<u64> {
     args.get(name)?.as_u64()
 }
 
+/// An argument that is present (and not null) but has the wrong type is an
+/// error, not a silent default.
+fn invalid_arg(args: &Value, name: &str, valid: fn(&Value) -> bool) -> Option<Value> {
+    match args.get(name) {
+        Some(v) if !v.is_null() && !valid(v) => Some(text_error(format!("invalid {name}: {v}"))),
+        _ => None,
+    }
+}
+
 fn arg_tags(args: &Value) -> Vec<String> {
     args.get("tags")
         .and_then(|v| v.as_array())
@@ -172,9 +181,23 @@ fn call_tool(file: &Path, cache: &mut Cache, name: &str, args: &Value) -> Value 
             if text.trim().is_empty() {
                 return text_error("remember needs non-empty text".to_string());
             }
-            let rtype = arg_str(args, "type")
-                .and_then(|t| RecordType::parse(&t))
-                .unwrap_or(RecordType::Fact);
+            let rtype = match args.get("type") {
+                None | Some(Value::Null) => RecordType::Fact,
+                Some(v) => match v.as_str().and_then(RecordType::parse) {
+                    Some(t) => t,
+                    None => {
+                        return text_error(format!(
+                            "unknown type {v}: expected fact, preference, episode or correction"
+                        ))
+                    }
+                },
+            };
+            if let Some(e) = invalid_arg(args, "salience", |v| v.as_f64().is_some())
+                .or_else(|| invalid_arg(args, "ttl_secs", |v| v.as_i64().is_some()))
+                .or_else(|| invalid_arg(args, "supersedes", |v| v.as_u64().is_some()))
+            {
+                return e;
+            }
             let salience = arg_f64(args, "salience").unwrap_or(0.5) as f32;
             if !salience.is_finite() {
                 return text_error("salience must be finite".to_string());
