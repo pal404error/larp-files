@@ -7,6 +7,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
 
 ## [Unreleased]
 
+### Security
+- **Oversized records are refused at write time.** A record over the
+  16 MiB per-record limit used to be written, then treated as a torn
+  tail by the reader: it and every later record became unreachable,
+  and `compact` / `repair` deleted them.
+- **Recalled text cannot forge output.** MCP `recall` / `list`, CLI
+  `list` / `search` / `recall` and `dump` escape newlines, control and
+  bidi characters, so a stored memory can no longer inject extra
+  "record" lines or terminal escape sequences. The tool descriptions
+  now say memory text is untrusted data, not instructions.
+- **No overflow on extreme ttl / timestamps.** `ttl_secs = i64::MAX`
+  crashed debug builds on every later call and silently expired the
+  memory in release builds.
+- **No id reuse after imports.** Appends continue after the highest id;
+  importing out-of-order ids no longer leads to duplicate ids.
+- **Verified installs.** Releases publish `SHA256SUMS` and GitHub
+  build-provenance attestations; `install.sh` / `install.ps1` refuse
+  to install a binary that does not match. Releases made before this
+  change have no `SHA256SUMS`, so the installers need a new release.
+  `install.ps1` matches PATH entries exactly and honours
+  `LARP_NO_MODIFY_PATH=1`.
+- **CI hardening.** Read-only tokens by default (write access only for
+  the release publish job), no persisted checkout credentials, all
+  actions pinned to commit SHAs, `cargo install --locked`.
+- **Safer atomic rewrites.** The temp file is created exclusively, so a
+  link planted at its predictable name is never written through; new
+  memory files are `0600` on Unix and rewrites keep the original mode.
+- **`repair` keeps a copy.** The bytes it removes are saved to
+  `<file>.torn-<unix_ts>` before truncating.
+
+### Fixed
+- MCP `list` returns the newest memories first, as documented.
+- Unknown types and unparsable numeric arguments are errors instead of
+  silent defaults (CLI `append`, `recall`, `import-md`; MCP `remember`).
+- `.gitattributes` keeps `*.sh` files LF on Windows checkouts.
+
 ### Planned
 - **Block-compressed segments:** Optional segment chunking to exploit cross-record redundancy while maintaining fast single-record seek.
 - **Semantic recall:** Local embeddings mixed with BM25. The relevance
