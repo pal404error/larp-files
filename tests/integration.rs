@@ -817,3 +817,28 @@ fn cli_init_verify_repair_import_md() {
     assert!(out.status.success());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// LARP-01: a record the reader would reject (> 16 MiB decoded) must be
+/// refused at write time; otherwise it hides every later record, and
+/// `compact` / `repair` then delete them.
+#[test]
+fn oversized_record_is_rejected_before_it_can_hide_later_records() {
+    let f = tmpfile("oversize");
+    append_record(&f, rec("first small record", 0.5)).unwrap();
+    let big = "a".repeat(17 * 1024 * 1024);
+    assert!(append_record(&f, rec(&big, 0.5)).is_err());
+    let jsonl = format!(
+        "{{\"type\":\"fact\",\"text\":\"{big}\"}}\n{{\"type\":\"fact\",\"text\":\"third\"}}\n"
+    );
+    assert!(
+        import_jsonl(&f, &jsonl).is_err(),
+        "import must fail atomically"
+    );
+    let id = append_record(&f, rec("appended after", 0.5)).unwrap();
+    assert_eq!(id, 2);
+    let d = read_file(&f).unwrap();
+    assert!(!d.torn);
+    assert_eq!(d.records.len(), 2);
+    assert_eq!(compact(&f).unwrap(), 2, "compact keeps everything");
+    let _ = std::fs::remove_file(&f);
+}

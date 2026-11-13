@@ -370,6 +370,16 @@ fn header_bytes() -> Vec<u8> {
 /// compression would not shrink it, in which case it is stored raw.
 fn encode_frame_v3(r: &Record) -> Result<Vec<u8>, String> {
     let payload = encode_record_v3(r);
+    // The reader rejects any record decoding beyond MAX_RECORD_BYTES and
+    // treats it as a torn tail, which hides every later record. Never
+    // write a frame our own reader would refuse.
+    if payload.len() as u64 > MAX_RECORD_BYTES {
+        return Err(format!(
+            "record is {} bytes encoded; the per-record limit is {} bytes (16 MiB)",
+            payload.len(),
+            MAX_RECORD_BYTES
+        ));
+    }
     let compressed = zstd::bulk::compress(&payload, 3).map_err(|e| e.to_string())?;
     let (stored, flags) = if compressed.len() < payload.len() {
         (compressed, FLAG_COMPRESSED)
