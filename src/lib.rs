@@ -1217,22 +1217,58 @@ pub fn stats_text(records: &[Record], size: u64, now: i64) -> String {
     )
 }
 
-/// Render records as Markdown (human-debuggable dump).
+/// Make stored text safe to print on one line for a human or an agent.
+///
+/// Memory text and tags are untrusted data: they may come from a hostile
+/// file or from content an agent was tricked into remembering. Newlines
+/// let a memory forge extra "#id [type] score=..." lines in recall output,
+/// terminal escape sequences can rewrite the screen, and bidi overrides
+/// can reorder what is displayed. All of them are shown as visible
+/// escapes instead (`\n`, `\r`, `\t`, `\u{..}`). Stored data is unchanged.
+pub fn escape_display(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control()
+                || matches!(
+                    c,
+                    '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+                ) =>
+            {
+                out.push_str(&format!("\\u{{{:04x}}}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Tags rendered as ` [tags: a, b]` (escaped), or empty when there are none.
+pub fn display_tags(tags: &[String]) -> String {
+    if tags.is_empty() {
+        String::new()
+    } else {
+        let escaped: Vec<String> = tags.iter().map(|t| escape_display(t)).collect();
+        format!(" [tags: {}]", escaped.join(", "))
+    }
+}
+
+/// Render records as Markdown (human-debuggable dump). Text and tags are
+/// escaped with [`escape_display`], so each record stays on one line.
 pub fn dump_markdown(records: &[Record]) -> String {
     let mut out = String::new();
     for r in records {
-        let tags = if r.tags.is_empty() {
-            String::new()
-        } else {
-            format!(" [tags: {}]", r.tags.join(", "))
-        };
+        let tags = display_tags(&r.tags);
         out.push_str(&format!(
             "- [{}] #{} (salience {:.2}, ts {}) {}{}\n",
             r.rtype.name(),
             r.id,
             r.salience,
             r.timestamp,
-            r.text,
+            escape_display(&r.text),
             tags
         ));
     }

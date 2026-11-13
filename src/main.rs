@@ -5,9 +5,9 @@
 mod mcp;
 
 use larp_memory::{
-    append_record, compact, create_file, dump_markdown, export_jsonl, find_duplicate, import_jsonl,
-    live_records, now_unix, parse_markdown, read_file, recall, recall_tagged, repair_file, search,
-    search_tagged, stats_text, verify_file, Record, RecordType,
+    append_record, compact, create_file, display_tags, dump_markdown, escape_display, export_jsonl,
+    find_duplicate, import_jsonl, live_records, now_unix, parse_markdown, read_file, recall,
+    recall_tagged, repair_file, search, search_tagged, stats_text, verify_file, Record, RecordType,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -50,11 +50,7 @@ fn record_line(r: &Record, score: Option<f64>) -> String {
         Some(s) => format!(" score={s:.3}"),
         None => String::new(),
     };
-    let tags_part = if r.tags.is_empty() {
-        String::new()
-    } else {
-        format!(" [tags: {}]", r.tags.join(", "))
-    };
+    // Escaped: stored text may carry newlines or terminal escape sequences.
     format!(
         "#{} [{}]{} salience={:.2} ts={} {}{}",
         r.id,
@@ -62,8 +58,8 @@ fn record_line(r: &Record, score: Option<f64>) -> String {
         score_part,
         r.salience,
         r.timestamp,
-        r.text,
-        tags_part
+        escape_display(&r.text),
+        display_tags(&r.tags)
     )
 }
 
