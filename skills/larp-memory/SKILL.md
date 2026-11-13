@@ -14,7 +14,10 @@ description: Give the agent durable memory in a single .larp file — remember f
 
 ## Setup
 
-Install the binary (or build from source with `cargo build --release`):
+Installing software changes the user's machine: ask the user before running
+an installer. Install the binary (or build from source with
+`cargo build --release`); the installer verifies the release checksum and
+refuses mismatches:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/pal404error/larp-files/main/install.sh | sh
