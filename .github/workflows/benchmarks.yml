@@ -14,11 +14,18 @@ on:
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
+# Least privilege: the job reads the repo and uploads an artifact
+# (artifact upload uses the runtime token, not GITHUB_TOKEN scopes).
+permissions:
+  contents: read
+
 jobs:
   bench:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Run benchmarks (10,000 records)
         run: cargo run --release --example bench | tee bench-results.txt
