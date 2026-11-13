@@ -937,3 +937,54 @@ fn append_after_out_of_order_import_never_reuses_ids() {
     let _ = std::fs::remove_file(&f);
     let _ = std::fs::remove_file(&g);
 }
+
+/// LARP-09: the atomic-rewrite temp file has a predictable name. A link
+/// planted there must be replaced, never written through. Hard links work
+/// on every platform (including Windows without privileges).
+#[test]
+fn atomic_rewrite_does_not_write_through_planted_hard_link() {
+    let dir = std::env::temp_dir().join(format!("larp-plant-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let victim = dir.join("victim.txt");
+    std::fs::write(&victim, b"precious").unwrap();
+    let f = dir.join("memory.larp");
+    let planted = dir.join(format!(".memory.larp.tmp.{}", std::process::id()));
+    std::fs::hard_link(&victim, &planted).unwrap();
+    // First append on a new file goes through the atomic-write path.
+    append_record(&f, rec("first memory", 0.5)).unwrap();
+    assert_eq!(std::fs::read(&victim).unwrap(), b"precious");
+    assert_eq!(read_file(&f).unwrap().records.len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_rewrite_does_not_follow_planted_symlink() {
+    let dir = std::env::temp_dir().join(format!("larp-symlink-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let victim = dir.join("victim.txt");
+    std::fs::write(&victim, b"precious").unwrap();
+    let f = dir.join("memory.larp");
+    let planted = dir.join(format!(".memory.larp.tmp.{}", std::process::id()));
+    std::os::unix::fs::symlink(&victim, &planted).unwrap();
+    append_record(&f, rec("first memory", 0.5)).unwrap();
+    assert_eq!(std::fs::read(&victim).unwrap(), b"precious");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn memory_files_are_private_and_rewrites_keep_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = tmpfile("perms");
+    append_record(&f, rec("personal memory", 0.5)).unwrap();
+    let mode = std::fs::metadata(&f).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "new memory files are owner-only");
+    std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o640)).unwrap();
+    compact(&f).unwrap();
+    let mode = std::fs::metadata(&f).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o640, "compact keeps the user's chosen mode");
+    let _ = std::fs::remove_file(&f);
+}

@@ -694,6 +694,24 @@ fn acquire_lock(path: &Path) -> Result<LockGuard, String> {
     Ok(LockGuard(f))
 }
 
+/// Create the temp file for an atomic rewrite. A stale file or link at
+/// that name (a crashed earlier run with the same pid, or one planted by
+/// another user in a shared directory) is removed, never written through:
+/// `create_new` (O_EXCL) fails instead of following a symlink or hard link,
+/// so nobody can make larp overwrite another file. New files are 0600 on
+/// Unix, since memories are personal data.
+fn create_private_tmp(tmp: &Path) -> Result<File, String> {
+    let _ = std::fs::remove_file(tmp);
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(tmp).map_err(|e| e.to_string())
+}
+
 /// Write bytes atomically: temp file in the same directory, fsync, rename
 /// over the original, best-effort directory fsync so the rename survives
 /// a crash. A crash mid-write leaves the old file intact.
@@ -709,7 +727,16 @@ fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     );
     let tmp = dir.join(tmp_name);
     let result = (|| -> Result<(), String> {
-        let mut f = File::create(&tmp).map_err(|e| e.to_string())?;
+        let mut f = create_private_tmp(&tmp)?;
+        // A rewrite keeps the permissions the user gave the original file
+        // (rename would otherwise replace e.g. 0600 with the default mode).
+        #[cfg(unix)]
+        {
+            if let Ok(meta) = std::fs::metadata(path) {
+                f.set_permissions(meta.permissions())
+                    .map_err(|e| e.to_string())?;
+            }
+        }
         f.write_all(bytes).map_err(|e| e.to_string())?;
         f.sync_data().map_err(|e| e.to_string())?;
         drop(f);
