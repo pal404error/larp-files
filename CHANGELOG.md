@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-11-14
+
 ### Security
 - **Oversized records are refused at write time.** A record over the
   16 MiB per-record limit used to be written, then treated as a torn
