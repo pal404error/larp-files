@@ -1087,3 +1087,39 @@ fn stored_memories_cannot_forge_output_lines() {
     assert_eq!(escape_display("a\r\nb\tc"), "a\\r\\nb\\tc");
     let _ = std::fs::remove_file(&f);
 }
+
+/// LARP-11: MCP `list` must return the newest memories first, as its tool
+/// description says, so a limit keeps the most recent ones.
+#[test]
+fn mcp_list_is_newest_first() {
+    let f = tmpfile("mcp-list");
+    for t in [
+        "oldest memory alpha",
+        "middle memory beta",
+        "newest memory omega",
+    ] {
+        append_record(&f, rec(t, 0.5)).unwrap();
+    }
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let mut child = Command::new(bin)
+        .arg("--file")
+        .arg(&f)
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"list\",\"arguments\":{\"limit\":1}}}\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    let reply: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stdout).unwrap().trim()).unwrap();
+    let body = reply["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(body.starts_with("#3 "), "{body}");
+    assert!(body.contains("newest memory omega"), "{body}");
+    let _ = std::fs::remove_file(&f);
+}

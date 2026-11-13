@@ -262,7 +262,10 @@ fn call_tool(file: &Path, cache: &mut Cache, name: &str, args: &Value) -> Value 
                 Ok(r) => r,
                 Err(e) => return text_error(e),
             };
-            let live = live_records(records, now_unix());
+            let mut live = live_records(records, now_unix());
+            // Newest first, as the tool description promises; file order
+            // is oldest first, so recent memories fell outside the limit.
+            live.sort_by_key(|r| std::cmp::Reverse(r.id));
             if live.is_empty() {
                 return text_content("no memories found".to_string());
             }
