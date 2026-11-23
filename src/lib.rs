@@ -1202,6 +1202,48 @@ pub fn hybrid_search_tagged<'a>(
     hybrid_search(records, query, query_vec, sidecar, Some(tag), now)
 }
 
+/// Vector-only search: the vector leg alone, best chunk per record,
+/// cosine ≤ 0 dropped, with the same salience × type-decay multiplier.
+/// Used by the fixed-set benchmark to compare the legs head to head;
+/// callers that want the fused ranking use `hybrid_search`.
+pub fn vector_search<'a>(
+    records: &'a [Record],
+    query_vec: &[f32],
+    sidecar: &sidecar::Sidecar,
+    tag: Option<&str>,
+    now: i64,
+) -> Vec<Scored<'a>> {
+    if query_vec.is_empty() || query_vec.iter().all(|&x| x == 0.0) {
+        return Vec::new();
+    }
+    let ids = vector_leg(records, query_vec, sidecar, tag, now);
+    let live: std::collections::HashMap<u64, &Record> = live_records(records, now)
+        .into_iter()
+        .filter(|r| tag.map(|t| r.tags.iter().any(|x| x == t)).unwrap_or(true))
+        .map(|r| (r.id, r))
+        .collect();
+    let mut out: Vec<Scored> = Vec::new();
+    for id in ids {
+        if let Some(r) = live.get(&id) {
+            // Recompute the best-chunk cosine for the score (the leg
+            // returns ids only). Cheap: one record's chunks.
+            let mut best = 0.0f32;
+            for chunk in sidecar.vectors_for(id) {
+                let sim = embed::cosine(query_vec, chunk);
+                if sim > best {
+                    best = sim;
+                }
+            }
+            out.push(Scored {
+                record: r,
+                score: best as f64 * salience_for_score(r) * type_decay(r.rtype, r.timestamp, now),
+            });
+        }
+    }
+    out.sort_by(|a, b| b.score.total_cmp(&a.score));
+    out
+}
+
 fn hybrid_recall_impl<'a>(
     records: &'a [Record],
     query: &str,

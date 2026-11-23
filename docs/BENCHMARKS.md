@@ -58,6 +58,49 @@ the gate still guards against future 3x regressions.
 best memories in 1,991 tokens — **99.3% fewer tokens** than a full-file dump.
 That, not raw bytes, is what saves agent cost.
 
+## Semantic recall (fixed set) — v1.4
+
+Method: `cargo run --release --example semantic_bench` — a fixed corpus
+shipped in-repo (12 short records + 4 long records of ~300 tokens each,
+so the sidecar holds 2 chunks and the best-chunk rule is exercised),
+9 queries with known gold record ids: 4 keyword, 3 paraphrase
+(zero shared tokens with the gold), 2 trap (share a token with a
+distractor that outranks the gold on keywords alone). Legs: BM25,
+vector-only (best chunk per record), hybrid (RRF 0.50/0.35/0.15, k=60).
+
+| query | class | gold | BM25@1 | vector@1 | hybrid@1 |
+|---|---|---|---|---|---|
+| rust | keyword | 1 | 1 | 1 | 1 |
+| invoice template | keyword | 4 | 4 | 4 | 4 |
+| quarterly planning | keyword | 7, 13 | 13 | 7 | 13 |
+| race condition | keyword | 8, 14 | 14 | 8 | 14 |
+| unpaid bill | paraphrase | 3 | — | 3 | 3 |
+| early caffeine | paraphrase | 5 | — | 5 | 5 |
+| lives in the capital | paraphrase | 2 | 14 | 2 | 6 |
+| the user likes coffee | trap | 5 | 6 | 6 | 6 |
+| tea every morning | trap | 5 | 5 | 6 | 5 |
+
+| leg | hit@1 | any-hit@5 | R@10 |
+|---|---|---|---|
+| BM25 | 5/9 | 6/9 | 6/9 |
+| vector | 7/9 | 9/9 | 9/9 |
+| hybrid | 7/9 | 8/9 | 8/9 |
+
+Honest reading: the vector leg wins the paraphrases outright (3/3 at
+hit@1 where BM25 gets 0/3) and has the best any-hit@5 (9/9). Hybrid
+ties vector on hit@1 (7/9) but loses one any-hit@5: on "lives in the
+capital", BM25 matches the stopwords "the"/"in" in the long debugging
+record and the fusion drags the vector leg's correct #1 down to #6 —
+the fixed paper weights do not win everywhere, and BM25's stopword
+noise can poison the fusion. The trap "the user likes coffee" fools
+all three legs: MiniLM rates sentence-structure similarity ("the user
+likes tea") above the coffee/espresso link. The long records (13, 14)
+rank top-1 on their keyword queries in all three legs, so best-chunk
+scoring works. Nine queries is a directional signal, not a paper-grade
+eval — the same weights underperformed the best single leg on the
+Python prototype's corpora too (synthetic: vector R@10 0.840 vs hybrid
+0.631; LongMemEval-S: BM25 R@10 1.000 vs hybrid 0.980).
+
 ## Next optimizations (not yet implemented)
 
 1. **Shared zstd dictionary** stored in the header, trained on record text —
@@ -74,10 +117,10 @@ That, not raw bytes, is what saves agent cost.
    (CRC-checked, no decompression) to find the next id: 4 ms at 10k
    records, down from 65 ms. The MCP server additionally caches records
    between calls.
-4. **Semantic recall** (local embeddings mixed with BM25): the relevance
-   test suite documents the gap — a paraphrase with no shared words is
-   not found. This needs a model download, so it stays future work for
-   an offline-first crate.
+4. **Semantic recall** (local embeddings mixed with BM25): DONE in v1.4 —
+   see "Semantic recall (fixed set)" above. The paraphrase gap the
+   relevance test suite documented is closed: a paraphrase with no shared
+   words is now found by the vector leg and by hybrid recall.
 
 ## Independent comparison: SQLite FTS5 (user-measured, 2026-10-28)
 

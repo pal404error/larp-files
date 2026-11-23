@@ -525,14 +525,43 @@ fn relevance_hit_at_one() {
 }
 
 #[test]
-#[ignore = "needs semantic search: keyword ranking cannot match a paraphrase with no shared words (bug 12)"]
 fn semantic_paraphrase_gap() {
+    // Bug 12, closed by v1.4: keyword ranking cannot match a paraphrase
+    // with no shared words. The record and the query share zero tokens
+    // ("unpaid bill" vs "client will not pay the outstanding invoice").
     let f = tmpfile("semantic-gap");
     append_record(&f, rec("client will not pay the outstanding invoice", 0.9)).unwrap();
+    append_record(&f, rec("prefers rust", 0.9)).unwrap();
+    append_record(&f, rec("home base is Ottawa", 0.9)).unwrap();
     let data = read_file(&f).unwrap();
-    let hits = search(&data.records, "outstanding AR dispute", now_unix());
-    assert!(!hits.is_empty());
+    // BM25 alone finds nothing — this is the gap the feature closes.
+    assert!(search(&data.records, "unpaid bill", now_unix()).is_empty());
+    // The semantic path (real model, lazy download) must return the
+    // invoice record first. A failed download fails loudly here: the
+    // binary exits non-zero and the assert reports stderr.
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let out = Command::new(bin)
+        .arg("--file")
+        .arg(&f)
+        .arg("search")
+        .arg("--semantic")
+        .arg("unpaid bill")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "semantic search failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        text.lines().next().unwrap().contains("outstanding invoice"),
+        "semantic search must rank the invoice first: {text}"
+    );
     let _ = std::fs::remove_file(&f);
+    let mut vec_path = f.into_os_string();
+    vec_path.push(".vec");
+    let _ = std::fs::remove_file(vec_path);
 }
 
 #[test]
