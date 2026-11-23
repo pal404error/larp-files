@@ -34,6 +34,7 @@
 //!   it coordinates larp writers; it cannot stop other programs editing
 //!   the file by hand.)
 
+pub mod embed;
 pub mod sidecar;
 
 use std::collections::{HashMap, HashSet};
