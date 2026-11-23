@@ -34,6 +34,8 @@
 //!   it coordinates larp writers; it cannot stop other programs editing
 //!   the file by hand.)
 
+pub mod sidecar;
+
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
