@@ -4,6 +4,8 @@
 
 mod mcp;
 
+use larp_memory::embed::{OnnxEmbedder, MODEL_ID};
+use larp_memory::sidecar::{build_index, sidecar_path};
 use larp_memory::{
     append_record, compact, create_file, dump_markdown, export_jsonl, find_duplicate, import_jsonl,
     live_records, now_unix, parse_markdown, read_file, recall, recall_tagged, repair_file, search,
@@ -29,6 +31,7 @@ fn usage() -> &'static str {
      \x20 init [--client <claude|cursor|codex|none>]\n\
      \x20 verify\n\
      \x20 repair\n\
+     \x20 index [--force]\n\
      \x20 mcp"
 }
 
@@ -410,6 +413,38 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
                 imported += 1;
             }
             println!("imported {imported} records from {src} ({duplicates} duplicates skipped)");
+            Ok(())
+        }
+        "index" => {
+            // Building the sidecar needs the model: unlike search/recall,
+            // there is no BM25 fallback for an explicit index — the whole
+            // point is producing vectors. A missing model (offline) is a
+            // clear error, not a silent no-op.
+            let force = has_flag(rest, "--force");
+            let embedder = OnnxEmbedder::load_or_download()?;
+            let report = build_index(file, &embedder, force)?;
+            if report.rebuilt {
+                println!(
+                    "rebuilt index: {} records, {} chunks",
+                    report.total_records, report.total_chunks
+                );
+            } else if report.indexed == 0 {
+                println!(
+                    "index is up to date: {} records, {} chunks",
+                    report.total_records, report.total_chunks
+                );
+            } else {
+                println!(
+                    "indexed {} new records ({} new chunks); {} records, {} chunks total",
+                    report.indexed, report.chunks, report.total_records, report.total_chunks
+                );
+            }
+            println!("model: {MODEL_ID}");
+            println!(
+                "sidecar: {} ({} bytes)",
+                sidecar_path(file).display(),
+                report.sidecar_bytes
+            );
             Ok(())
         }
         "mcp" => mcp::run(file),

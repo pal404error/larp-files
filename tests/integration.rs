@@ -817,3 +817,94 @@ fn cli_init_verify_repair_import_md() {
     assert!(out.status.success());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn cli_index_builds_sidecar() {
+    let dir = std::env::temp_dir().join(format!("larp-cli-index-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("memory.larp");
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let run = |args: &[&str]| -> std::process::Output {
+        Command::new(bin)
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    // Two records, then index: builds the sidecar from scratch.
+    let out = run(&[
+        "--file",
+        f.to_str().unwrap(),
+        "append",
+        "the user prefers rust",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = run(&[
+        "--file",
+        f.to_str().unwrap(),
+        "append",
+        "home base is Ottawa",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = run(&["--file", f.to_str().unwrap(), "index"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("2 records"), "{text}");
+    assert!(text.contains("Xenova/all-MiniLM-L6-v2"), "{text}");
+    let vec_path = dir.join("memory.larp.vec");
+    assert!(vec_path.exists(), "sidecar must exist after index");
+    assert!(
+        vec_path.metadata().unwrap().len() > 0,
+        "sidecar must be non-empty"
+    );
+    // Indexing must not touch the .larp file: verify still passes.
+    let out = run(&["--file", f.to_str().unwrap(), "verify"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Second index is a no-op.
+    let out = run(&["--file", f.to_str().unwrap(), "index"]);
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .contains("up to date"),
+        "second index must be a no-op"
+    );
+    // One append: incremental index embeds only the new record.
+    let out = run(&[
+        "--file",
+        f.to_str().unwrap(),
+        "append",
+        "likes strong coffee",
+    ]);
+    assert!(out.status.success());
+    let out = run(&["--file", f.to_str().unwrap(), "index"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .contains("1 new records"),
+        "incremental index must report the one new record"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
