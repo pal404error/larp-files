@@ -5,12 +5,13 @@
 mod mcp;
 
 use larp_memory::embed::{OnnxEmbedder, MODEL_ID};
-use larp_memory::sidecar::{build_index, sidecar_path};
+use larp_memory::sidecar::{build_index, file_stat, read_sidecar, sidecar_path, Embedder, Sidecar};
 use larp_memory::{
     append_record, compact, create_file, dump_markdown, export_jsonl, find_duplicate, import_jsonl,
     live_records, now_unix, parse_markdown, read_file, recall, recall_tagged, repair_file, search,
     search_tagged, stats_text, verify_file, Record, RecordType,
 };
+use larp_memory::{hybrid_recall, hybrid_recall_tagged, hybrid_search, hybrid_search_tagged};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -21,8 +22,8 @@ fn usage() -> &'static str {
      \x20 append --type <fact|preference|episode|correction> [--salience <0..1>] [--ttl <secs>] [--supersedes <id>] [--tag <t>]... [--meta <k=v>]... <text>\n\
      \x20 list\n\
      \x20 dump\n\
-     \x20 search [--tag <t>] <query>\n\
-     \x20 recall [--max-tokens <n>] [--tag <t>] [query]\n\
+     \x20 search [--semantic] [--tag <t>] <query>\n\
+     \x20 recall [--semantic] [--max-tokens <n>] [--tag <t>] [query]\n\
      \x20 compact\n\
      \x20 stats\n\
      \x20 import <path.jsonl>|-\n\
@@ -72,6 +73,65 @@ fn record_line(r: &Record, score: Option<f64>) -> String {
 
 fn has_flag(args: &[String], name: &str) -> bool {
     args.iter().any(|a| a == name)
+}
+
+/// Semantic path for `search --semantic` / `recall --semantic`: load the
+/// embedder (downloading with a notice on first use), auto-index the
+/// file when the sidecar is missing or stale (with a notice — indexing
+/// can take seconds and the first run downloads the model), embed the
+/// query, and return (query vector, sidecar).
+///
+/// Returns None when no embedder is available (offline, download
+/// failed, corrupt model): the caller falls back to BM25 and the
+/// notice on stderr says why. An empty query embeds to no chunks, so
+/// the vector leg is skipped and the caller uses BM25 ranking.
+fn load_semantic(file: &Path, record_count: usize, query: &str) -> Option<(Vec<f32>, Sidecar)> {
+    let embedder = match OnnxEmbedder::load_or_download() {
+        Ok(e) => e,
+        Err(msg) => {
+            eprintln!("semantic search unavailable ({msg}); falling back to BM25");
+            return None;
+        }
+    };
+    let vec_path = sidecar_path(file);
+    let needs_index = match (read_sidecar(&vec_path), file_stat(file)) {
+        (Ok(Some(sc)), Ok((mtime_ns, len))) => !sc.is_fresh(
+            embedder.model_id(),
+            embedder.dim(),
+            mtime_ns,
+            len,
+            record_count as u64,
+        ),
+        (Ok(None), _) => true,
+        _ => true,
+    };
+    if needs_index {
+        if vec_path.exists() {
+            eprintln!("vector index is stale — re-indexing {record_count} records…");
+        } else {
+            eprintln!("no vector index yet — indexing {record_count} records…");
+        }
+        if let Err(msg) = build_index(file, &embedder, false) {
+            eprintln!("indexing failed ({msg}); falling back to BM25");
+            return None;
+        }
+    }
+    let sidecar = match read_sidecar(&vec_path) {
+        Ok(Some(sc)) => sc,
+        _ => {
+            eprintln!("vector index unreadable; falling back to BM25");
+            return None;
+        }
+    };
+    let chunks = match embedder.embed_chunks(query) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("query embedding failed ({msg}); falling back to BM25");
+            return None;
+        }
+    };
+    // Queries are short: one chunk. A long query uses its first chunk.
+    chunks.into_iter().next().map(|qv| (qv, sidecar))
 }
 
 fn main() -> ExitCode {
@@ -191,11 +251,14 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
         }
         "search" => {
             let tag = flag_value(rest, "--tag");
+            let semantic = has_flag(rest, "--semantic");
             let mut qparts: Vec<String> = Vec::new();
             let mut j = 0;
             while j < rest.len() {
                 if rest[j] == "--tag" {
                     j += 2;
+                } else if rest[j] == "--semantic" {
+                    j += 1;
                 } else {
                     qparts.push(rest[j].clone());
                     j += 1;
@@ -207,9 +270,37 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
                 eprintln!("warning: ignored a torn/corrupt tail");
             }
             let records = data.records;
-            let hits = match tag.as_deref() {
-                Some(t) => search_tagged(&records, &query, t, now_unix()),
-                None => search(&records, &query, now_unix()),
+            let hits = if semantic {
+                match load_semantic(file, records.len(), &query) {
+                    Some((qv, sc)) => match tag.as_deref() {
+                        Some(t) => hybrid_search_tagged(
+                            &records,
+                            &query,
+                            Some(qv.as_slice()),
+                            Some(&sc),
+                            t,
+                            now_unix(),
+                        ),
+                        None => hybrid_search(
+                            &records,
+                            &query,
+                            Some(qv.as_slice()),
+                            Some(&sc),
+                            None,
+                            now_unix(),
+                        ),
+                    },
+                    // No embedder (offline, download failed): BM25.
+                    None => match tag.as_deref() {
+                        Some(t) => search_tagged(&records, &query, t, now_unix()),
+                        None => search(&records, &query, now_unix()),
+                    },
+                }
+            } else {
+                match tag.as_deref() {
+                    Some(t) => search_tagged(&records, &query, t, now_unix()),
+                    None => search(&records, &query, now_unix()),
+                }
             };
             for s in hits {
                 println!("{}", record_line(s.record, Some(s.score)));
@@ -221,12 +312,15 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(2000);
             let tag = flag_value(rest, "--tag");
+            let semantic = has_flag(rest, "--semantic");
             // Drop the flags and their values; the rest is the query.
             let mut qparts: Vec<String> = Vec::new();
             let mut j = 0;
             while j < rest.len() {
                 if rest[j] == "--max-tokens" || rest[j] == "--tag" {
                     j += 2;
+                } else if rest[j] == "--semantic" {
+                    j += 1;
                 } else {
                     qparts.push(rest[j].clone());
                     j += 1;
@@ -238,9 +332,38 @@ fn run(file: &Path, cmd: &str, rest: &[String]) -> Result<(), String> {
                 eprintln!("warning: ignored a torn/corrupt tail");
             }
             let records = data.records;
-            let (picked, used) = match tag.as_deref() {
-                Some(t) => recall_tagged(&records, &query, max_tokens, t, now_unix()),
-                None => recall(&records, &query, max_tokens, now_unix()),
+            let (picked, used) = if semantic {
+                match load_semantic(file, records.len(), &query) {
+                    Some((qv, sc)) => match tag.as_deref() {
+                        Some(t) => hybrid_recall_tagged(
+                            &records,
+                            &query,
+                            max_tokens,
+                            Some(qv.as_slice()),
+                            Some(&sc),
+                            t,
+                            now_unix(),
+                        ),
+                        None => hybrid_recall(
+                            &records,
+                            &query,
+                            max_tokens,
+                            Some(qv.as_slice()),
+                            Some(&sc),
+                            now_unix(),
+                        ),
+                    },
+                    // No embedder (offline, download failed): BM25.
+                    None => match tag.as_deref() {
+                        Some(t) => recall_tagged(&records, &query, max_tokens, t, now_unix()),
+                        None => recall(&records, &query, max_tokens, now_unix()),
+                    },
+                }
+            } else {
+                match tag.as_deref() {
+                    Some(t) => recall_tagged(&records, &query, max_tokens, t, now_unix()),
+                    None => recall(&records, &query, max_tokens, now_unix()),
+                }
             };
             for s in &picked {
                 println!("{}", record_line(s.record, Some(s.score)));

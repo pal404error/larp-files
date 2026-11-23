@@ -908,3 +908,126 @@ fn cli_index_builds_sidecar() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn cli_search_semantic_finds_paraphrase() {
+    let dir = std::env::temp_dir().join(format!("larp-cli-sem-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("memory.larp");
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let run = |args: &[&str]| -> std::process::Output {
+        Command::new(bin)
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let file = f.to_str().unwrap();
+    for text in [
+        "client will not pay the outstanding invoice",
+        "prefers rust",
+        "home base is Ottawa",
+    ] {
+        let out = run(&["--file", file, "append", text]);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    // Plain search finds nothing: "unpaid bill" shares no token with
+    // any record. This is the gap semantic search closes.
+    let out = run(&["--file", file, "search", "unpaid bill"]);
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8(out.stdout).unwrap().trim().is_empty(),
+        "BM25 must not match a true paraphrase"
+    );
+    // Semantic search auto-indexes (first run) and returns the invoice.
+    let out = run(&["--file", file, "search", "--semantic", "unpaid bill"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        text.contains("client will not pay the outstanding invoice"),
+        "semantic search must return the invoice record: {text}"
+    );
+    assert!(text.lines().next().unwrap().contains("outstanding invoice"));
+    // Recall with --semantic honours the token budget.
+    let out = run(&["--file", file, "recall", "--semantic", "unpaid bill"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("outstanding invoice"), "{text}");
+    assert!(text.contains("tokens used:"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_semantic_recall() {
+    let f = tmpfile("mcp-sem");
+    let bin = env!("CARGO_BIN_EXE_larp");
+    let mut child = Command::new(bin)
+        .arg("--file")
+        .arg(&f)
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = concat!(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"0\"}}}\n",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"remember\",\"arguments\":{\"text\":\"client will not pay the outstanding invoice\",\"type\":\"fact\",\"salience\":0.9}}}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"remember\",\"arguments\":{\"text\":\"prefers rust\",\"type\":\"fact\",\"salience\":0.9}}}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"recall\",\"arguments\":{\"query\":\"unpaid bill\",\"semantic\":true}}}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"recall\",\"arguments\":{\"query\":\"unpaid bill\",\"semantic\":false}}}\n",
+    );
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let text = String::from_utf8(out.stdout).unwrap();
+    let lines: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 6);
+    // tools/list advertises the semantic flag on recall.
+    let tools = lines[1]["result"]["tools"].as_array().unwrap();
+    let recall_tool = tools.iter().find(|t| t["name"] == "recall").unwrap();
+    assert!(
+        recall_tool["inputSchema"]["properties"]
+            .get("semantic")
+            .is_some(),
+        "recall schema must advertise the semantic flag"
+    );
+    // Semantic recall finds the invoice; plain recall finds nothing.
+    assert!(lines[4]["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("outstanding invoice"));
+    assert!(lines[5]["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("no memories found"));
+    let _ = std::fs::remove_file(&f);
+    let vec_path = {
+        let mut s = f.clone().into_os_string();
+        s.push(".vec");
+        std::path::PathBuf::from(s)
+    };
+    let _ = std::fs::remove_file(vec_path);
+}

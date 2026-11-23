@@ -1083,6 +1083,180 @@ pub fn recall_tagged<'a>(
     recall_impl(records, query, max_tokens, Some(tag), now)
 }
 
+// --- Hybrid recall (v1.4): BM25 + vector, fused by RRF -----------------
+
+/// Hybrid RRF weights — the paper defaults, NOT renormalized. The graph
+/// leg (0.15) is empty in v1.4 (co-recall graph is a lifecycle
+/// follow-up), so it contributes nothing; the weights stay as stated.
+pub const RRF_BM25_WEIGHT: f64 = 0.50;
+pub const RRF_VECTOR_WEIGHT: f64 = 0.35;
+pub const RRF_GRAPH_WEIGHT: f64 = 0.15;
+pub const RRF_K: f64 = 60.0;
+
+/// Pure reciprocal rank fusion: each leg is (weight, ranked record ids,
+/// 1-based); a record at rank `r` in a leg contributes `w / (k + r)`.
+/// Legs that return nothing contribute nothing. Output sorted best
+/// first. Ties (same fused score) keep insertion order.
+pub fn rrf_fuse(rankings: &[(f64, Vec<u64>)], k: f64) -> Vec<(u64, f64)> {
+    let mut scores: Vec<(u64, f64)> = Vec::new();
+    for (weight, ids) in rankings {
+        if *weight == 0.0 {
+            continue;
+        }
+        for (i, id) in ids.iter().enumerate() {
+            let rank = (i + 1) as f64;
+            let contrib = weight / (k + rank);
+            match scores.iter_mut().find(|(x, _)| x == id) {
+                Some((_, s)) => *s += contrib,
+                None => scores.push((*id, contrib)),
+            }
+        }
+    }
+    scores.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scores
+}
+
+/// The vector leg: rank live records (tag-filtered) by their best-chunk
+/// cosine against the query vector. Cosine ≤ 0 rows are dropped, so the
+/// leg never returns the whole store on a no-overlap query. Records with
+/// no vectors (never indexed) are skipped — BM25 can still rank them.
+fn vector_leg(
+    records: &[Record],
+    query_vec: &[f32],
+    sidecar: &sidecar::Sidecar,
+    tag: Option<&str>,
+    now: i64,
+) -> Vec<u64> {
+    let mut scored: Vec<(u64, f32)> = Vec::new();
+    for r in live_records(records, now) {
+        if tag.map(|t| r.tags.iter().any(|x| x == t)).unwrap_or(true) {
+            let chunks = sidecar.vectors_for(r.id);
+            let mut best = 0.0f32;
+            for chunk in chunks {
+                let sim = embed::cosine(query_vec, chunk);
+                if sim > best {
+                    best = sim;
+                }
+            }
+            if best > 0.0 {
+                scored.push((r.id, best));
+            }
+        }
+    }
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scored.into_iter().map(|(id, _)| id).collect()
+}
+
+/// Hybrid search: BM25 leg + vector leg fused by RRF, then the same
+/// salience × type-decay multiplier `search_impl` applies, so the fused
+/// ranking stays consistent with BM25-only ranking. `query_vec` is the
+/// L2-normalized query embedding (first chunk for long queries); None
+/// (or an all-zero vector, or no sidecar) skips the vector leg.
+pub fn hybrid_search<'a>(
+    records: &'a [Record],
+    query: &str,
+    query_vec: Option<&[f32]>,
+    sidecar: Option<&sidecar::Sidecar>,
+    tag: Option<&str>,
+    now: i64,
+) -> Vec<Scored<'a>> {
+    let bm25 = search_impl(records, query, tag, now);
+    let bm25_ids: Vec<u64> = bm25.iter().map(|s| s.record.id).collect();
+    let vec_ids = match (query_vec, sidecar) {
+        (Some(qv), Some(sc)) if !qv.is_empty() && !qv.iter().all(|&x| x == 0.0) => {
+            vector_leg(records, qv, sc, tag, now)
+        }
+        _ => Vec::new(),
+    };
+    let fused = rrf_fuse(
+        &[(RRF_BM25_WEIGHT, bm25_ids), (RRF_VECTOR_WEIGHT, vec_ids)],
+        RRF_K,
+    );
+    let live: std::collections::HashMap<u64, &Record> = live_records(records, now)
+        .into_iter()
+        .filter(|r| tag.map(|t| r.tags.iter().any(|x| x == t)).unwrap_or(true))
+        .map(|r| (r.id, r))
+        .collect();
+    let mut out: Vec<Scored> = Vec::new();
+    for (id, score) in fused {
+        if let Some(r) = live.get(&id) {
+            out.push(Scored {
+                record: r,
+                score: score * salience_for_score(r) * type_decay(r.rtype, r.timestamp, now),
+            });
+        }
+    }
+    out.sort_by(|a, b| b.score.total_cmp(&a.score));
+    out
+}
+
+/// Hybrid search restricted to a tag.
+pub fn hybrid_search_tagged<'a>(
+    records: &'a [Record],
+    query: &str,
+    query_vec: Option<&[f32]>,
+    sidecar: Option<&sidecar::Sidecar>,
+    tag: &str,
+    now: i64,
+) -> Vec<Scored<'a>> {
+    hybrid_search(records, query, query_vec, sidecar, Some(tag), now)
+}
+
+fn hybrid_recall_impl<'a>(
+    records: &'a [Record],
+    query: &str,
+    max_tokens: usize,
+    query_vec: Option<&[f32]>,
+    sidecar: Option<&sidecar::Sidecar>,
+    tag: Option<&str>,
+    now: i64,
+) -> (Vec<Scored<'a>>, usize) {
+    let ranked = hybrid_search(records, query, query_vec, sidecar, tag, now);
+    let mut picked = Vec::new();
+    let mut used = 0usize;
+    for s in ranked {
+        let t = s.record.est_tokens();
+        if used + t <= max_tokens {
+            used += t;
+            picked.push(s);
+        }
+    }
+    (picked, used)
+}
+
+/// Hybrid recall fitting a token budget, best first.
+pub fn hybrid_recall<'a>(
+    records: &'a [Record],
+    query: &str,
+    max_tokens: usize,
+    query_vec: Option<&[f32]>,
+    sidecar: Option<&sidecar::Sidecar>,
+    now: i64,
+) -> (Vec<Scored<'a>>, usize) {
+    hybrid_recall_impl(records, query, max_tokens, query_vec, sidecar, None, now)
+}
+
+/// Hybrid recall restricted to a tag, fitting a token budget.
+pub fn hybrid_recall_tagged<'a>(
+    records: &'a [Record],
+    query: &str,
+    max_tokens: usize,
+    query_vec: Option<&[f32]>,
+    sidecar: Option<&sidecar::Sidecar>,
+    tag: &str,
+    now: i64,
+) -> (Vec<Scored<'a>>, usize) {
+    hybrid_recall_impl(
+        records,
+        query,
+        max_tokens,
+        query_vec,
+        sidecar,
+        Some(tag),
+        now,
+    )
+}
+
 /// Find a live record of the same type whose text is a duplicate of
 /// `text`: identical after normalization, or word-set Jaccard >= 0.9.
 /// Returns the existing record's id. Used by the store entry points
@@ -1588,5 +1762,104 @@ mod tests {
         // Overlong encodings are rejected, not read past the buffer.
         let mut off = 0;
         assert!(get_uvarint(&[0xFF; 12], &mut off).is_none());
+    }
+
+    fn stub_sidecar(pairs: &[(u64, Vec<Vec<f32>>)]) -> sidecar::Sidecar {
+        let header = sidecar::SidecarHeader {
+            dim: 2,
+            model_id: "test/stub".to_string(),
+            source_mtime_ns: 0,
+            source_len: 0,
+            source_count: 0,
+        };
+        let mut s = sidecar::Sidecar::new(header);
+        for (id, chunks) in pairs {
+            s.vectors.insert(*id, chunks.clone());
+        }
+        s
+    }
+
+    fn rec_with_id(id: u64, text: &str) -> Record {
+        let mut r = Record::new(RecordType::Fact, 0.9, 0, text.to_string());
+        r.id = id;
+        r
+    }
+
+    #[test]
+    fn rrf_fuse_weights_ranks() {
+        let fused = rrf_fuse(&[(0.5, vec![1, 2, 3]), (0.35, vec![2, 1])], 60.0);
+        assert_eq!(fused.len(), 3);
+        assert_eq!(fused[0].0, 1);
+        assert_eq!(fused[1].0, 2);
+        assert_eq!(fused[2].0, 3);
+        // Rank 1 in a leg contributes w/(k+1); rank 2 contributes w/(k+2).
+        assert!((fused[0].1 - (0.5 / 61.0 + 0.35 / 62.0)).abs() < 1e-12);
+        assert!((fused[1].1 - (0.5 / 62.0 + 0.35 / 61.0)).abs() < 1e-12);
+        assert!((fused[2].1 - (0.5 / 63.0)).abs() < 1e-12);
+        // Empty legs and zero-weight legs contribute nothing.
+        assert!(rrf_fuse(&[], 60.0).is_empty());
+        assert!(rrf_fuse(&[(0.0, vec![1]), (0.5, vec![])], 60.0).is_empty());
+    }
+
+    #[test]
+    fn vector_leg_drops_nonpositive_cosine() {
+        let records = vec![
+            rec_with_id(1, "alpha"),
+            rec_with_id(2, "beta"),
+            rec_with_id(3, "gamma"),
+        ];
+        let sc = stub_sidecar(&[
+            (1, vec![vec![1.0, 0.0]]),
+            (2, vec![vec![0.0, 1.0]]),
+            (3, vec![vec![-1.0, 0.0]]),
+        ]);
+        // Query [1,0]: record 1 cosine 1, record 2 cosine 0 (dropped),
+        // record 3 cosine -1 (dropped).
+        assert_eq!(vector_leg(&records, &[1.0, 0.0], &sc, None, 0), vec![1]);
+        // A record with no vectors is skipped, not ranked.
+        let sc2 = stub_sidecar(&[(1, vec![vec![1.0, 0.0]])]);
+        assert_eq!(vector_leg(&records, &[1.0, 0.0], &sc2, None, 0), vec![1]);
+    }
+
+    #[test]
+    fn hybrid_search_finds_paraphrase_bm25_misses() {
+        let records = vec![
+            rec_with_id(1, "client will not pay the outstanding invoice"),
+            rec_with_id(2, "prefers rust"),
+            rec_with_id(3, "home base is Ottawa"),
+        ];
+        // The query vector matches the invoice record exactly; the
+        // others are orthogonal, so their cosine is 0 and they drop out.
+        let sc = stub_sidecar(&[
+            (1, vec![vec![1.0, 0.0]]),
+            (2, vec![vec![0.0, 1.0]]),
+            (3, vec![vec![0.0, 1.0]]),
+        ]);
+        // BM25 alone finds nothing: "unpaid bill" shares no token with
+        // any record. This is the gap the vector leg closes.
+        assert!(search(&records, "unpaid bill", 0).is_empty());
+        let hits = hybrid_search(
+            &records,
+            "unpaid bill",
+            Some(&[1.0, 0.0]),
+            Some(&sc),
+            None,
+            0,
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.id, 1);
+        // Fused score = RRF (0.35/61) x salience (0.9, stored as f32)
+        // x decay (1.0). The f32->f64 cast matters: 0.9f32 is not 0.9f64.
+        assert!((hits[0].score - (0.35 / 61.0 * 0.9f32 as f64)).abs() < 1e-12);
+        // No query vector / no sidecar: hybrid degrades to BM25.
+        assert!(hybrid_search(&records, "unpaid bill", None, Some(&sc), None, 0).is_empty());
+        assert!(
+            hybrid_search(&records, "unpaid bill", Some(&[1.0, 0.0]), None, None, 0).is_empty()
+        );
+        assert!(
+            hybrid_search(&records, "rust", Some(&[1.0, 0.0]), Some(&sc), None, 0)
+                .iter()
+                .any(|s| s.record.id == 2)
+        );
     }
 }

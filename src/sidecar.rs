@@ -266,7 +266,11 @@ pub fn build_index(
             source_count: count,
         };
         if !force {
-            if let Some(existing) = read_sidecar(&vec_path)? {
+            // A corrupt sidecar is not an error here: it is a cache, so
+            // it is rebuilt from scratch (read_sidecar's Err means
+            // "unparseable", and the fresh check below treats None the
+            // same way).
+            if let Some(existing) = read_sidecar(&vec_path).ok().flatten() {
                 if existing.is_fresh(embedder.model_id(), dim, mtime_ns, len, count) {
                     let total_chunks: usize = existing.vectors.values().map(|c| c.len()).sum();
                     return Ok(IndexReport {

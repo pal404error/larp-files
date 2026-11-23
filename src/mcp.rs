@@ -9,9 +9,11 @@
 //! other writers are picked up via the stat check. The protocol version
 //! answered is the one this server implements, not the client's echo.
 
+use larp_memory::embed::OnnxEmbedder;
+use larp_memory::sidecar::{build_index, file_stat, read_sidecar, sidecar_path, Embedder, Sidecar};
 use larp_memory::{
-    append_record, find_duplicate, live_records, now_unix, read_file, recall, recall_tagged,
-    stats_text, Record, RecordType,
+    append_record, find_duplicate, hybrid_recall, hybrid_recall_tagged, live_records, now_unix,
+    read_file, recall, recall_tagged, stats_text, Record, RecordType,
 };
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
@@ -73,6 +75,166 @@ impl Cache {
     }
 }
 
+/// Cached embedding state for the server process: the ONNX session is
+/// loaded lazily on the first semantic call and kept for the process
+/// lifetime; loaded vectors are keyed by the `.larp` file's mtime/size
+/// (same stat check as `Cache`). Our own mutations invalidate it; other
+/// writers are picked up via the stat check.
+#[derive(Default)]
+struct VecCache {
+    embedder: Option<OnnxEmbedder>,
+    // Rc: sidecar() returns an owned handle, so callers can hold the
+    // vectors while the cache is mutated (a plain &Sidecar borrow would
+    // forbid the re-index that happens inside the same call).
+    sidecar: Option<std::rc::Rc<Sidecar>>,
+    mtime: Option<SystemTime>,
+    len: u64,
+    valid: bool,
+}
+
+impl VecCache {
+    fn invalidate(&mut self) {
+        self.valid = false;
+        self.sidecar = None;
+    }
+
+    /// Load the embedder lazily. Err means no embedder is available
+    /// (offline, download failed): the caller falls back to BM25.
+    fn embedder(&mut self) -> Result<&OnnxEmbedder, String> {
+        if self.embedder.is_none() {
+            self.embedder = Some(OnnxEmbedder::load_or_download()?);
+        }
+        Ok(self.embedder.as_ref().unwrap())
+    }
+
+    /// Fresh sidecar for the file, auto-indexing when missing or stale.
+    /// Err means no usable sidecar: the caller falls back to BM25.
+    fn sidecar(
+        &mut self,
+        file: &Path,
+        record_count: usize,
+    ) -> Result<std::rc::Rc<Sidecar>, String> {
+        let meta = std::fs::metadata(file).ok();
+        let (mtime, len) = match &meta {
+            Some(m) => (m.modified().ok(), m.len()),
+            None => (None, 0),
+        };
+        if self.valid && self.mtime == mtime && self.len == len {
+            if let Some(sc) = &self.sidecar {
+                return Ok(std::rc::Rc::clone(sc));
+            }
+        }
+        // Model identity, owned, so the borrow ends before we mutate.
+        let (model_id, dim) = {
+            let e = self.embedder()?;
+            (e.model_id().to_string(), e.dim())
+        };
+        let (mtime_ns, file_len) = file_stat(file)?;
+        let vec_path = sidecar_path(file);
+        if let Ok(Some(sc)) = read_sidecar(&vec_path) {
+            if sc.is_fresh(&model_id, dim, mtime_ns, file_len, record_count as u64) {
+                let rc = std::rc::Rc::new(sc);
+                self.sidecar = Some(std::rc::Rc::clone(&rc));
+                self.mtime = mtime;
+                self.len = len;
+                self.valid = true;
+                return Ok(rc);
+            }
+        }
+        {
+            let e = self.embedder()?;
+            build_index(file, e, false)?;
+        }
+        let sc = read_sidecar(&vec_path)?.ok_or_else(|| "index produced no sidecar".to_string())?;
+        let rc = std::rc::Rc::new(sc);
+        self.sidecar = Some(std::rc::Rc::clone(&rc));
+        self.mtime = mtime;
+        self.len = len;
+        self.valid = true;
+        Ok(rc)
+    }
+}
+
+/// Semantic recall for the MCP server: hybrid BM25+vector recall.
+/// On any embedding failure, falls back to plain BM25 recall and notes
+/// it in the output text — the tool call never fails for a missing model.
+fn semantic_recall(
+    vec_cache: &mut VecCache,
+    file: &Path,
+    records: &[Record],
+    query: &str,
+    max_tokens: usize,
+    tag: Option<&str>,
+) -> Value {
+    // Plain BM25 recall output text, shared by the fallback paths.
+    let plain_text = |records: &[Record]| -> String {
+        let (picked, used) = match tag {
+            Some(t) => recall_tagged(records, query, max_tokens, t, now_unix()),
+            None => recall(records, query, max_tokens, now_unix()),
+        };
+        if picked.is_empty() {
+            return "no memories found".to_string();
+        }
+        let mut out = String::new();
+        for s in &picked {
+            out.push_str(&record_line(s.record, Some(s.score)));
+            out.push('\n');
+        }
+        out.push_str(&format!("tokens used: {used} / {max_tokens}"));
+        out
+    };
+    let sidecar = match vec_cache.sidecar(file, records.len()) {
+        Ok(sc) => sc,
+        Err(msg) => {
+            return text_content(format!(
+                "(semantic recall unavailable: {msg}; fell back to BM25)\n{}",
+                plain_text(records)
+            ));
+        }
+    };
+    let qv = match vec_cache.embedder().and_then(|e| e.embed_chunks(query)) {
+        Ok(chunks) => match chunks.into_iter().next() {
+            Some(qv) => qv,
+            None => return text_content(plain_text(records)),
+        },
+        Err(msg) => {
+            return text_content(format!(
+                "(query embedding failed: {msg}; fell back to BM25)\n{}",
+                plain_text(records)
+            ));
+        }
+    };
+    let (picked, used) = match tag {
+        Some(t) => hybrid_recall_tagged(
+            records,
+            query,
+            max_tokens,
+            Some(qv.as_slice()),
+            Some(sidecar.as_ref()),
+            t,
+            now_unix(),
+        ),
+        None => hybrid_recall(
+            records,
+            query,
+            max_tokens,
+            Some(qv.as_slice()),
+            Some(sidecar.as_ref()),
+            now_unix(),
+        ),
+    };
+    if picked.is_empty() {
+        return text_content("no memories found".to_string());
+    }
+    let mut out = String::new();
+    for s in &picked {
+        out.push_str(&record_line(s.record, Some(s.score)));
+        out.push('\n');
+    }
+    out.push_str(&format!("tokens used: {used} / {max_tokens}"));
+    text_content(out)
+}
+
 fn tools_list() -> Value {
     json!({"tools": [
         {"name": "remember", "description": "Store a memory. Types: fact, preference, episode, correction. A correction with supersedes replaces that record (only corrections supersede). A near-duplicate of a live record is not stored twice; the existing id is returned instead.",
@@ -85,11 +247,12 @@ fn tools_list() -> Value {
                            "tags": {"type": "array", "items": {"type": "string"}},
                            "meta": {"type": "object", "additionalProperties": {"type": "string"}}},
             "required": ["text"]}},
-        {"name": "recall", "description": "Recall memories fitting a token budget, best first. Each line carries score, salience, and timestamp so the caller can judge staleness. Optional tag restricts to one project/namespace.",
+        {"name": "recall", "description": "Recall memories fitting a token budget, best first. Each line carries score, salience, and timestamp so the caller can judge staleness. Optional tag restricts to one project/namespace. Set semantic to true for hybrid BM25+vector recall (auto-indexes on first use; falls back to BM25, noted in the output, when no embedding model is available).",
          "inputSchema": {"type": "object",
             "properties": {"query": {"type": "string"},
                            "max_tokens": {"type": "integer"},
-                           "tag": {"type": "string"}},
+                           "tag": {"type": "string"},
+                           "semantic": {"type": "boolean"}},
             "required": []}},
         {"name": "forget", "description": "Supersede a memory by id. History is preserved, never deleted. Forgetting a correction revives the record it replaced.",
          "inputSchema": {"type": "object",
@@ -166,7 +329,13 @@ fn record_line(r: &Record, score: Option<f64>) -> String {
     )
 }
 
-fn call_tool(file: &Path, cache: &mut Cache, name: &str, args: &Value) -> Value {
+fn call_tool(
+    file: &Path,
+    cache: &mut Cache,
+    vec_cache: &mut VecCache,
+    name: &str,
+    args: &Value,
+) -> Value {
     match name {
         "remember" => {
             let Some(text) = arg_str(args, "text") else {
@@ -205,6 +374,7 @@ fn call_tool(file: &Path, cache: &mut Cache, name: &str, args: &Value) -> Value 
             match append_record(file, record) {
                 Ok(id) => {
                     cache.invalidate();
+                    vec_cache.invalidate();
                     text_content(format!("stored #{id}"))
                 }
                 Err(e) => text_error(e),
@@ -214,10 +384,24 @@ fn call_tool(file: &Path, cache: &mut Cache, name: &str, args: &Value) -> Value 
             let query = arg_str(args, "query").unwrap_or_default();
             let max_tokens = arg_u64(args, "max_tokens").unwrap_or(2000) as usize;
             let tag = arg_str(args, "tag");
+            let semantic = args
+                .get("semantic")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let records = match cache.load(file) {
                 Ok(r) => r,
                 Err(e) => return text_error(e),
             };
+            if semantic {
+                return semantic_recall(
+                    vec_cache,
+                    file,
+                    records,
+                    &query,
+                    max_tokens,
+                    tag.as_deref(),
+                );
+            }
             let (picked, used) = match tag.as_deref() {
                 Some(t) => recall_tagged(records, &query, max_tokens, t, now_unix()),
                 None => recall(records, &query, max_tokens, now_unix()),
@@ -254,6 +438,7 @@ fn call_tool(file: &Path, cache: &mut Cache, name: &str, args: &Value) -> Value 
             match append_record(file, fix) {
                 Ok(_) => {
                     cache.invalidate();
+                    vec_cache.invalidate();
                     text_content(format!("superseded #{id}"))
                 }
                 Err(e) => text_error(e),
@@ -293,7 +478,7 @@ fn call_tool(file: &Path, cache: &mut Cache, name: &str, args: &Value) -> Value 
 }
 
 /// Handle one JSON-RPC message. Returns None for notifications (no reply).
-fn handle(file: &Path, cache: &mut Cache, line: &str) -> Option<String> {
+fn handle(file: &Path, cache: &mut Cache, vec_cache: &mut VecCache, line: &str) -> Option<String> {
     let msg: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(_) => return Some(error(&Value::Null, -32700, "parse error")),
@@ -320,7 +505,7 @@ fn handle(file: &Path, cache: &mut Cache, line: &str) -> Option<String> {
                 .unwrap_or("")
                 .to_string();
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
-            Some(result(&id, call_tool(file, cache, &name, &args)))
+            Some(result(&id, call_tool(file, cache, vec_cache, &name, &args)))
         }
         _ => Some(error(&id, -32601, "method not found")),
     }
@@ -330,12 +515,13 @@ pub fn run(file: &Path) -> Result<(), String> {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     let mut cache = Cache::default();
+    let mut vec_cache = VecCache::default();
     for line in stdin.lock().lines() {
         let line = line.map_err(|e| e.to_string())?;
         if line.trim().is_empty() {
             continue;
         }
-        if let Some(resp) = handle(file, &mut cache, &line) {
+        if let Some(resp) = handle(file, &mut cache, &mut vec_cache, &line) {
             writeln!(stdout, "{resp}").map_err(|e| e.to_string())?;
             stdout.flush().map_err(|e| e.to_string())?;
         }
