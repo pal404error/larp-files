@@ -617,7 +617,6 @@ name = "larp-memory"
 version = "1.4.0"
 dependencies = [
  "fs2",
- "ndarray 0.16.1",
  "ort",
  "serde",
  "serde_json",
@@ -741,21 +740,6 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
-]
-
-[[package]]
-name = "ndarray"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
-dependencies = [
- "matrixmultiply",
- "num-complex",
- "num-integer",
- "num-traits",
- "portable-atomic",
- "portable-atomic-util",
- "rawpointer",
 ]
 
 [[package]]
@@ -887,7 +871,7 @@ version = "2.0.0-rc.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37c87aa7a90b7ff3e0fe36cccd475df8d67f15f07f4d6c370c4b38464232813c"
 dependencies = [
- "ndarray 0.17.2",
+ "ndarray",
  "ort-sys",
  "smallvec",
  "tracing",

@@ -65,12 +65,24 @@ pub fn model_files_present(dir: &Path) -> bool {
     dir.join(MODEL_FILE).is_file() && dir.join(TOKENIZER_FILE).is_file()
 }
 
+/// Temp path for a download: one per process, so parallel `larp`
+/// invocations downloading the same file never share (and rename away)
+/// each other's temp file. The old fixed `dest.tmp` name raced in CI:
+/// the semantic tests run concurrently on a cold model cache, one
+/// process renamed `model.onnx.tmp` away while another was still
+/// writing, and the loser failed its rename with "No such file or
+/// directory". Renames are atomic and the bytes are identical, so two
+/// processes landing the same file is harmless.
+fn download_tmp_path(dest: &Path) -> PathBuf {
+    dest.with_extension(format!("tmp-{}", std::process::id()))
+}
+
 fn download_to(url: &str, dest: &Path) -> Result<(), String> {
     let resp = ureq::get(url)
         .call()
         .map_err(|e| format!("download {url}: {e}"))?;
     let mut reader = resp.into_reader();
-    let tmp = dest.with_extension("tmp");
+    let tmp = download_tmp_path(dest);
     let result = (|| -> Result<(), String> {
         let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
         std::io::copy(&mut reader, &mut f).map_err(|e| e.to_string())?;
@@ -298,6 +310,22 @@ impl Embedder for OnnxEmbedder {
 mod tests {
     use super::*;
     use std::sync::OnceLock;
+
+    #[test]
+    fn download_tmp_path_is_per_process_and_beside_dest() {
+        let dest = PathBuf::from("/tmp/cache/model.onnx");
+        let tmp = download_tmp_path(&dest);
+        // Not the old shared name, and still next to the destination.
+        assert_ne!(tmp, dest.with_extension("tmp"));
+        assert_eq!(tmp.parent(), dest.parent());
+        assert!(tmp
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("model.tmp-"));
+        // Same process, same name: a retry overwrites its own temp file.
+        assert_eq!(tmp, download_tmp_path(&dest));
+    }
 
     #[test]
     fn chunk_ids_wraps_and_splits() {

@@ -39,8 +39,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
   `tokenizer.json` enables padding/truncation to 128 tokens, so every
   sentence embedded alike (unrelated cosine 0.72); padding and
   truncation are now cleared at load (unrelated cosine 0.03).
-
----
+- **Concurrent model downloads no longer race.** Parallel `larp`
+  invocations on a cold model cache shared one `model.onnx.tmp` temp
+  file; one process renamed it away while another was still writing,
+  and the loser failed with "No such file or directory". Downloads
+  now use a per-process temp name.
+- **Windows release build links the static CRT.** The ort prebuilt
+  static library is built with /MT while Rust defaults to /MD, which
+  failed the Windows build with LNK2005/LNK4098; Windows CI jobs now
+  set `-C target-feature=+crt-static`.
+- Removed the unused `ndarray` dependency.
 
 ---
 
