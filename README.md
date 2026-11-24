@@ -51,6 +51,13 @@ irm https://raw.githubusercontent.com/pal404error/larp-files/main/install.ps1 | 
 cargo install --path .
 ```
 
+Both installers refuse to install unless the binary matches the `SHA256SUMS`
+file published with the release. Releases also carry GitHub build-provenance
+attestations; to verify one yourself:
+`gh attestation verify ~/.local/bin/larp --repo pal404error/larp-files`.
+Prefer downloading the script, reading it, then running it over piping it
+straight into a shell.
+
 *(Once published on crates.io: `cargo install larp-memory`)*
 
 ---

@@ -237,7 +237,11 @@ impl Record {
     }
 
     pub fn expired(&self, now: i64) -> bool {
-        self.ttl_secs > 0 && now > self.timestamp + self.ttl_secs
+        // Saturating: timestamp and ttl come from files, imports and MCP
+        // input. A plain `+` panicked in debug builds (crashing the MCP
+        // server on every later call) and wrapped negative in release
+        // (a "keep forever" memory became instantly expired).
+        self.ttl_secs > 0 && now > self.timestamp.saturating_add(self.ttl_secs)
     }
 
     /// Rough token estimate for budgeting: ~4 chars per token.
@@ -373,6 +377,16 @@ fn header_bytes() -> Vec<u8> {
 /// compression would not shrink it, in which case it is stored raw.
 fn encode_frame_v3(r: &Record) -> Result<Vec<u8>, String> {
     let payload = encode_record_v3(r);
+    // The reader rejects any record decoding beyond MAX_RECORD_BYTES and
+    // treats it as a torn tail, which hides every later record. Never
+    // write a frame our own reader would refuse.
+    if payload.len() as u64 > MAX_RECORD_BYTES {
+        return Err(format!(
+            "record is {} bytes encoded; the per-record limit is {} bytes (16 MiB)",
+            payload.len(),
+            MAX_RECORD_BYTES
+        ));
+    }
     let compressed = zstd::bulk::compress(&payload, 3).map_err(|e| e.to_string())?;
     let (stored, flags) = if compressed.len() < payload.len() {
         (compressed, FLAG_COMPRESSED)
@@ -572,10 +586,14 @@ pub fn read_file(path: &Path) -> Result<FileData, String> {
 }
 
 /// Scan only v3 frame headers (CRC-checked, no decompression, no decoding).
-/// Returns (last good record id, good_len, torn). Used by the fast append
+/// Returns (highest good record id, good_len, torn). Used by the fast append
 /// path so appending no longer re-reads and unpacks the whole file.
+///
+/// The *highest* id, not the last one: imports preserve non-colliding ids,
+/// so frames are not always in id order. Using the last frame's id made
+/// later appends reuse ids that already existed.
 fn scan_v3_headers(bytes: &[u8]) -> (u64, usize, bool) {
-    let mut last_id = 0u64;
+    let mut max_id = 0u64;
     let mut off = 8usize;
     let mut good_len = 8usize;
     let mut torn = false;
@@ -627,11 +645,19 @@ fn scan_v3_headers(bytes: &[u8]) -> (u64, usize, bool) {
             torn = true;
             break;
         }
-        last_id = id;
+        max_id = max_id.max(id);
         off = p + len;
         good_len = off;
     }
-    (last_id, good_len, torn)
+    (max_id, good_len, torn)
+}
+
+/// The id after `max_id`, or an error once the id space is exhausted
+/// (a hostile or hand-edited file can hold id u64::MAX).
+fn next_record_id(max_id: u64) -> Result<u64, String> {
+    max_id
+        .checked_add(1)
+        .ok_or_else(|| "record id space exhausted (an id is u64::MAX)".to_string())
 }
 
 // ---------- Durable, locked writes ----------
@@ -671,6 +697,24 @@ fn acquire_lock(path: &Path) -> Result<LockGuard, String> {
     Ok(LockGuard(f))
 }
 
+/// Create the temp file for an atomic rewrite. A stale file or link at
+/// that name (a crashed earlier run with the same pid, or one planted by
+/// another user in a shared directory) is removed, never written through:
+/// `create_new` (O_EXCL) fails instead of following a symlink or hard link,
+/// so nobody can make larp overwrite another file. New files are 0600 on
+/// Unix, since memories are personal data.
+fn create_private_tmp(tmp: &Path) -> Result<File, String> {
+    let _ = std::fs::remove_file(tmp);
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(tmp).map_err(|e| e.to_string())
+}
+
 /// Write bytes atomically: temp file in the same directory, fsync, rename
 /// over the original, best-effort directory fsync so the rename survives
 /// a crash. A crash mid-write leaves the old file intact.
@@ -686,7 +730,16 @@ fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     );
     let tmp = dir.join(tmp_name);
     let result = (|| -> Result<(), String> {
-        let mut f = File::create(&tmp).map_err(|e| e.to_string())?;
+        let mut f = create_private_tmp(&tmp)?;
+        // A rewrite keeps the permissions the user gave the original file
+        // (rename would otherwise replace e.g. 0600 with the default mode).
+        #[cfg(unix)]
+        {
+            if let Ok(meta) = std::fs::metadata(path) {
+                f.set_permissions(meta.permissions())
+                    .map_err(|e| e.to_string())?;
+            }
+        }
         f.write_all(bytes).map_err(|e| e.to_string())?;
         f.sync_data().map_err(|e| e.to_string())?;
         drop(f);
@@ -755,7 +808,7 @@ fn append_inner(path: &Path, mut record: Record) -> Result<u64, String> {
         return Err(format!("unsupported .larp format version: {version}"));
     }
     if version == FORMAT_VERSION {
-        let (last_id, good_len, torn) = scan_v3_headers(&raw);
+        let (max_id, good_len, torn) = scan_v3_headers(&raw);
         if torn {
             // Cut back to the last good frame before appending, so the
             // new record is readable and its id does not collide.
@@ -766,7 +819,7 @@ fn append_inner(path: &Path, mut record: Record) -> Result<u64, String> {
             f.set_len(good_len as u64).map_err(|e| e.to_string())?;
             f.sync_data().map_err(|e| e.to_string())?;
         }
-        let next_id = last_id + 1;
+        let next_id = next_record_id(max_id)?;
         record.id = next_id;
         let frame = encode_frame_v3(&record)?;
         let mut f = OpenOptions::new()
@@ -780,7 +833,7 @@ fn append_inner(path: &Path, mut record: Record) -> Result<u64, String> {
     }
     // v1/v2: full read, then rewrite everything as v3 (torn tail dropped).
     let data = read_file(path)?;
-    let next_id = data.records.iter().map(|r| r.id).max().unwrap_or(0) + 1;
+    let next_id = next_record_id(data.records.iter().map(|r| r.id).max().unwrap_or(0))?;
     record.id = next_id;
     let mut all = data.records;
     all.push(record);
@@ -908,7 +961,7 @@ fn span_matches(span: &str, term: &str) -> bool {
 fn type_decay(rtype: RecordType, timestamp: i64, now: i64) -> f64 {
     match rtype {
         RecordType::Episode => {
-            let age_days = ((now - timestamp).max(0) as f64) / 86_400.0;
+            let age_days = (now.saturating_sub(timestamp).max(0) as f64) / 86_400.0;
             0.5f64.powf(age_days / 90.0)
         }
         _ => 1.0,
@@ -1383,22 +1436,58 @@ pub fn stats_text(records: &[Record], size: u64, now: i64) -> String {
     )
 }
 
-/// Render records as Markdown (human-debuggable dump).
+/// Make stored text safe to print on one line for a human or an agent.
+///
+/// Memory text and tags are untrusted data: they may come from a hostile
+/// file or from content an agent was tricked into remembering. Newlines
+/// let a memory forge extra "#id [type] score=..." lines in recall output,
+/// terminal escape sequences can rewrite the screen, and bidi overrides
+/// can reorder what is displayed. All of them are shown as visible
+/// escapes instead (`\n`, `\r`, `\t`, `\u{..}`). Stored data is unchanged.
+pub fn escape_display(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control()
+                || matches!(
+                    c,
+                    '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+                ) =>
+            {
+                out.push_str(&format!("\\u{{{:04x}}}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Tags rendered as ` [tags: a, b]` (escaped), or empty when there are none.
+pub fn display_tags(tags: &[String]) -> String {
+    if tags.is_empty() {
+        String::new()
+    } else {
+        let escaped: Vec<String> = tags.iter().map(|t| escape_display(t)).collect();
+        format!(" [tags: {}]", escaped.join(", "))
+    }
+}
+
+/// Render records as Markdown (human-debuggable dump). Text and tags are
+/// escaped with [`escape_display`], so each record stays on one line.
 pub fn dump_markdown(records: &[Record]) -> String {
     let mut out = String::new();
     for r in records {
-        let tags = if r.tags.is_empty() {
-            String::new()
-        } else {
-            format!(" [tags: {}]", r.tags.join(", "))
-        };
+        let tags = display_tags(&r.tags);
         out.push_str(&format!(
             "- [{}] #{} (salience {:.2}, ts {}) {}{}\n",
             r.rtype.name(),
             r.id,
             r.salience,
             r.timestamp,
-            r.text,
+            escape_display(&r.text),
             tags
         ));
     }
@@ -1460,6 +1549,46 @@ pub struct RepairReport {
     pub bytes_removed: u64,
     pub records_kept: usize,
     pub was_torn: bool,
+    /// Where the removed bytes were saved before truncating (None when
+    /// nothing was removed).
+    pub saved_to: Option<PathBuf>,
+}
+
+/// Copy the bytes a repair is about to cut off into a sibling file
+/// `<file>.torn-<unix_ts>[-n]`, created exclusively (never overwriting).
+/// "Torn" bytes are not always a crash fragment: a single corrupt frame in
+/// the middle of a file, or a frame that passes its CRC but does not
+/// decode, makes every later (valid) record part of the tail. Keeping a
+/// copy means repair can never be the step that destroys them.
+fn save_removed_tail(path: &Path, tail: &[u8]) -> Result<PathBuf, String> {
+    let base = format!("{}.torn-{}", path.display(), now_unix());
+    for n in 0..100u32 {
+        let candidate = if n == 0 {
+            PathBuf::from(&base)
+        } else {
+            PathBuf::from(format!("{base}-{n}"))
+        };
+        let mut opts = OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        match opts.open(&candidate) {
+            Ok(mut f) => {
+                f.write_all(tail).map_err(|e| e.to_string())?;
+                f.sync_data().map_err(|e| e.to_string())?;
+                return Ok(candidate);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(format!(
+        "could not create a backup file next to {}",
+        path.display()
+    ))
 }
 
 /// Truncate a torn/corrupt tail back to the last valid frame, under the
@@ -1476,8 +1605,12 @@ pub fn repair_file(path: &Path) -> Result<RepairReport, String> {
             bytes_removed: 0,
             records_kept: data.records.len(),
             was_torn: false,
+            saved_to: None,
         });
     }
+    // Back up what is about to be cut off; abort the repair if that fails.
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let saved_to = save_removed_tail(path, bytes.get(data.good_len..).unwrap_or(&[]))?;
     let f = OpenOptions::new()
         .write(true)
         .open(path)
@@ -1488,6 +1621,7 @@ pub fn repair_file(path: &Path) -> Result<RepairReport, String> {
         bytes_removed: size.saturating_sub(data.good_len as u64),
         records_kept: data.records.len(),
         was_torn: true,
+        saved_to: Some(saved_to),
     })
 }
 
@@ -1702,13 +1836,13 @@ pub fn import_jsonl(path: &Path, input: &str) -> Result<Vec<u64>, String> {
     let _guard = acquire_lock(path)?;
     let existing = read_file(path)?;
     let mut used: HashSet<u64> = existing.records.iter().map(|r| r.id).collect();
-    let mut next_id = used.iter().max().copied().unwrap_or(0) + 1;
+    let mut next_id = next_record_id(used.iter().max().copied().unwrap_or(0))?;
     let mut id_map: HashMap<u64, u64> = HashMap::new();
     for r in &mut parsed {
         let old = r.id;
         if old == 0 || used.contains(&old) {
             let fresh = next_id;
-            next_id += 1;
+            next_id = next_record_id(next_id)?;
             if old != 0 {
                 id_map.insert(old, fresh);
             }
