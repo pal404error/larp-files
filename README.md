@@ -73,6 +73,12 @@ larp append --type fact --tag project --meta source=cli "uses Rust 1.99"
 larp recall --max-tokens 2000 rust
 larp recall --tag project rust       # filter by tag
 
+# 2b. Semantic recall (finds paraphrases BM25 misses — "unpaid bill"
+#     for an unpaid-invoice record). First run downloads a ~90 MB
+#     model to ~/.cache/larp/models and builds a memory.vec sidecar.
+larp index                           # build the vector index
+larp recall --semantic --max-tokens 2000 unpaid bill
+
 # 3. Supersede a previous memory with a correction (audit history preserved)
 larp append --type correction --supersedes 1 "the user prefers rust and python"
 
@@ -113,7 +119,7 @@ cp completions/larp.fish ~/.config/fish/completions/
 
 `larp mcp` speaks standard JSON-RPC 2.0 over stdio and exposes five tools:
 - `remember(text, type, salience, ttl_secs, supersedes, tags, meta)` — append a memory
-- `recall(query, max_tokens, tag)` — retrieve best memories within a token budget, optionally filtered by tag
+- `recall(query, max_tokens, tag, semantic)` — retrieve best memories within a token budget, optionally filtered by tag; `semantic: true` fuses BM25 with the local vector index (falls back to BM25 with a note when the model or index is unavailable)
 - `forget(id)` — supersede a memory while keeping history auditable
 - `list()` — all live memories
 - `stats()` — counts, sizes, live vs superseded

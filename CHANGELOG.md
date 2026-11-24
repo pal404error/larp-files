@@ -9,10 +9,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
 
 ### Planned
 - **Block-compressed segments:** Optional segment chunking to exploit cross-record redundancy while maintaining fast single-record seek.
-- **Semantic recall:** Local embeddings mixed with BM25. The relevance
-  tests document the current gap (paraphrases with no shared words are
-  not found); this needs a model download, so it stays future work for
-  an offline-first crate.
+
+---
+
+## [1.4.0] — 2026-11-24
+
+### Added
+- **Semantic recall:** local embeddings mixed with BM25. `larp index`
+  builds a `<file>.vec` sidecar (Xenova all-MiniLM-L6-v2, ~90 MB,
+  downloaded once to the model cache on first use, BM25 fallback when
+  offline); `larp search --semantic` / `larp recall --semantic` fuse
+  BM25 + vector legs with weighted RRF (0.50/0.35/0.15, k=60), and the
+  MCP `recall` tool takes an optional `semantic` flag. The paraphrase
+  gap the relevance tests documented is closed: a paraphrase with no
+  shared words ("unpaid bill" for an unpaid-invoice record) is now
+  found by the vector leg and by hybrid recall. Fixed-set benchmark
+  (16 records, 9 queries): BM25 hit@1 5/9, vector 7/9, hybrid 7/9 —
+  see `docs/BENCHMARKS.md` ("Semantic recall (fixed set)") for the
+  honest reading; the fixed paper weights do not win everywhere.
+- **Model cache note:** embeddings live in `$LARP_MODEL_DIR`, or
+  `$XDG_CACHE_HOME/larp/models`, or `~/.cache/larp/models`; see
+  `docs/VECTORS.md` for the sidecar format, staleness rules, and
+  chunking.
+- **Shell completions** for the new `index` command and `--semantic`
+  flag in bash, zsh, and fish.
+
+### Fixed
+- **Xenova tokenizer quirk found by the parity test:** the shipped
+  `tokenizer.json` enables padding/truncation to 128 tokens, so every
+  sentence embedded alike (unrelated cosine 0.72); padding and
+  truncation are now cleared at load (unrelated cosine 0.03).
 
 ---
 

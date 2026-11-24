@@ -34,10 +34,18 @@ Cursor, VS Code, Codex, and opencode configs). The server command is
   key/value metadata). A near-duplicate of a live record is not stored
   twice; the existing id is returned instead.
 - `recall` — retrieve memories. Arguments: `query`, `max_tokens`
-  (default 2000), `tag` (restrict to one project/namespace). Returns the
-  best memories that fit the budget, ranked by BM25 whole-word match x
-  salience x episode-only recency decay, each line carrying score,
-  salience, and timestamp so you can judge staleness.
+  (default 2000), `tag` (restrict to one project/namespace), `semantic`
+  (optional boolean, default false). With `semantic: true`, recall fuses
+  BM25 with the local vector index, so it finds paraphrases with no
+  shared words ("unpaid bill" for an unpaid-invoice record). Use it when
+  plain recall comes back empty or the query is a paraphrase; use plain
+  recall for exact keywords (cheaper, no model). The index is built by
+  `larp index` (or auto-built on first semantic recall); rebuild it
+  after a bulk import. Returns the best memories that fit the budget,
+  ranked by BM25 whole-word match x salience x episode-only recency
+  decay (fused with vector similarity when semantic), each line carrying
+  score, salience, and timestamp so you can judge staleness. Falls back
+  to BM25 with a note when the model or index is unavailable.
 - `forget` — supersede a memory by id. The old record stays in the file
   for audit; it just stops being live. Forgetting a correction revives
   the record it replaced.
@@ -50,6 +58,8 @@ Cursor, VS Code, Codex, and opencode configs). The server command is
 larp init --client claude   # create the file and write the MCP config
 larp append --type fact --salience 0.9 "the user prefers rust"
 larp recall --max-tokens 2000 rust
+larp index                   # build the vector index for semantic recall
+larp recall --semantic --max-tokens 2000 unpaid bill   # finds paraphrases
 larp stats        # counts, size, live vs superseded, token estimate
 larp compact      # drop expired/superseded records
 larp verify       # CRC-check every frame (nonzero exit if torn)

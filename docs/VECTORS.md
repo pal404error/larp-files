@@ -102,7 +102,13 @@ Semantic recall is benchmarked on a fixed in-repo set
 exercise chunking, with keyword, paraphrase, and trap queries that have
 known answers. Results are reported as BM25 vs vector vs hybrid
 (any-hit@5 / R@10) in `docs/BENCHMARKS.md` under "Semantic recall
-(fixed set)".
+(fixed set)". Measured on the fixed set (16 records, 9 queries):
+
+| leg | hit@1 | any-hit@5 | R@10 |
+|---|---|---|---|
+| BM25 | 5/9 | 6/9 | 6/9 |
+| vector | 7/9 | 9/9 | 9/9 |
+| hybrid | 7/9 | 8/9 | 8/9 |
 
 > The fixed paper weights do not win everywhere: on the Python
 > prototype's synthetic corpus vector-only beat hybrid (R@10 0.840 vs

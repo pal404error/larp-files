@@ -18,6 +18,7 @@ _larp() {
     'verify:Check file integrity'
     'repair:Truncate a torn tail'
     'mcp:Run the MCP server'
+    'index:Build the vector index for semantic recall'
   )
   _arguments -C \
     '--file[Memory file]:file:_files' \
@@ -30,7 +31,9 @@ _larp() {
     args)
       case $words[2] in
         append) _arguments '--type[type]:type:(fact preference episode correction)' '--salience[salience]' '--ttl[TTL seconds]' '--supersedes[superseded id]' ;;
-        recall) _arguments '--max-tokens[max tokens]' ;;
+        recall) _arguments '--max-tokens[max tokens]' '--semantic[semantic recall]' '--tag[tag]' ;;
+        search) _arguments '--semantic[semantic recall]' '--tag[tag]' ;;
+        index) _arguments '--force[rebuild the index]' ;;
         export) _arguments '--live[Live records only]' ;;
         init) _arguments '--client[client]:client:(claude cursor codex none)' ;;
         import-md) _arguments '--type[type]:type:(fact preference episode correction)' ;;
