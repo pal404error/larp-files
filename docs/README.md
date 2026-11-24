@@ -9,8 +9,10 @@ Welcome to the `.larp` developer documentation. Explore the technical specificat
 | Document | Description |
 |---|---|
 | [**FAQ.md**](FAQ.md) | Answers to common questions, ranking math, offline usage, and Windows tips. |
-| [**FORMAT.md**](FORMAT.md) | Formal specification of the binary header, CRC32-checked records, and v2 zstd compression. |
+| [**FORMAT.md**](FORMAT.md) | Formal specification of the binary header, CRC32-checked records, and v3 zstd compression. |
 | [**BENCHMARKS.md**](BENCHMARKS.md) | Real-world benchmark analysis on 10,000 memories (tokens, latencies, compression). |
+| [**VECTORS.md**](VECTORS.md) | Semantic recall: the `.vec` sidecar, chunking, hybrid RRF, and the fixed-set benchmark. |
+| [**ARCHITECTURE.md**](ARCHITECTURE.md) | Codebase map: core, sidecar, embedder, CLI, MCP server, CI. |
 | [**MCP_CLIENTS.md**](MCP_CLIENTS.md) | Copy-paste JSON configurations for Claude Code, Cursor, VS Code, Codex, and OpenCode. |
 | [**COMPARISON.md**](COMPARISON.md) | Deep architectural comparison: `.larp` vs Markdown vs Vector DBs vs SQLite. |
 | [**DEMO.md**](DEMO.md) | Step-by-step transcript demonstrating multi-session continuity and memory superseding. |

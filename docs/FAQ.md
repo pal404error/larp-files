@@ -9,7 +9,7 @@ Everything you need to know about `.larp`, design choices, troubleshooting, and 
 
 $$\text{Score} = \text{keyword\_match} \times \text{salience} \times 0.5^{(\text{age\_days} / 90)}$$
 
-This runs in sub-millisecond time ($<1\text{ ms}$ on 10,000 records) on any machine with zero external infrastructure and zero API cost. If you need semantic search across paraphrased queries, pair it with an embedding sidecar or vector store (see [COMPARISON.md](COMPARISON.md)).
+This runs in sub-millisecond time ($<1\text{ ms}$ on 10,000 records) on any machine with zero external infrastructure and zero API cost. Semantic search across paraphrased queries is built in since v1.4: `larp index` builds a local embedding sidecar (`.vec`) and `recall --semantic` fuses BM25 with the vector leg — still one binary, still no server (see [VECTORS.md](VECTORS.md)).
 
 ---
 

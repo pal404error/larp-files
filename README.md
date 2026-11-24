@@ -183,6 +183,26 @@ Tested using `cargo run --release --example bench` across 10,000 generated memor
 | **Storage vs Markdown** | **76.8%** (0.88 MB vs 1.15 MB) | Varint headers, zstd or raw per record |
 | **Storage vs JSONL** | **72.7%** (0.88 MB vs 1.21 MB) | Binary frame packing |
 
+### Semantic recall (v1.4, fixed 9-query set)
+
+`larp index` builds a local embedding sidecar (Xenova all-MiniLM-L6-v2,
+~90 MB, downloaded once); `recall --semantic` fuses BM25 with the vector
+leg (RRF 0.50/0.35/0.15). Measured with
+`cargo run --release --example semantic_bench` (16 records, 9 queries:
+4 keyword, 3 paraphrase with zero shared tokens, 2 traps):
+
+| leg | hit@1 | any-hit@5 | R@10 |
+|---|---|---|---|
+| BM25 | 5/9 | 6/9 | 6/9 |
+| vector | 7/9 | 9/9 | 9/9 |
+| hybrid | 7/9 | 8/9 | 8/9 |
+
+Vector wins every paraphrase outright (3/3 vs BM25 0/3); hybrid loses one
+any-hit@5 because BM25 matches stopwords in a long debugging record and
+drags the vector's correct #1 down. 9 queries is directional, not
+paper-grade — see [docs/BENCHMARKS.md](docs/BENCHMARKS.md) and
+[docs/VECTORS.md](docs/VECTORS.md) for the full analysis.
+
 > [!NOTE]
 > **Radical Transparency:** Per-record framing (now variable-length in v3) still adds overhead per record, which limits compression gains on tiny (60–100 char) strings, and per-record compression cannot exploit repetition across records. The true breakthrough is **token efficiency**: serving ranked memories within budget rather than dumping hundreds of thousands of tokens into your LLM prompt. Read the full analysis in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
@@ -220,8 +240,26 @@ Explore the complete [Documentation Hub](docs/README.md):
 - [**FAQ**](docs/FAQ.md) — Answers to questions on vector DBs, ranking math, and offline usage.
 - [**FORMAT.md**](docs/FORMAT.md) — Binary file format specification and record structure.
 - [**BENCHMARKS.md**](docs/BENCHMARKS.md) — Reproducible benchmarks and performance analysis.
+- [**VECTORS.md**](docs/VECTORS.md) — How semantic recall works: the `.vec` sidecar, chunking, hybrid RRF.
+- [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) — Codebase map for contributors.
 - [**MCP_CLIENTS.md**](docs/MCP_CLIENTS.md) — Integration setup for all major agent tools.
 - [**DEMO.md**](docs/DEMO.md) — Interactive session demo.
+
+---
+
+## Roadmap
+
+- **v1.4 (shipped)** — Semantic recall: local embeddings + BM25 hybrid RRF.
+- **Next** — crates.io publish (`cargo install larp-memory`), more MCP
+  client guides, recall-ranking experiments (see "Good first issues" in
+  [CONTRIBUTING.md](CONTRIBUTING.md)).
+- **v2.0** — Format v4: block-compressed segments for the ≥50%-smaller
+  storage target (see [docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
+
+Full history in [CHANGELOG.md](CHANGELOG.md).
+
+If `.larp` saves you tokens, ⭐ the repo — it is the single biggest thing
+that helps other agent builders find it.
 
 ---
 
