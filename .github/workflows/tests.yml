@@ -97,9 +97,20 @@ jobs:
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # copy-dylibs already symlinks the DLLs into target\debug,
+          # so a plain Copy-Item -Force there fails with "cannot
+          # overwrite the item with itself". Skip any DLL that is
+          # already present in the destination directory.
+          $src = Get-ChildItem "$env:ORT_NATIVE_DIR\*.dll"
           Get-ChildItem target\debug -Recurse -Include *.exe -File |
             Select-Object -ExpandProperty DirectoryName -Unique |
-            ForEach-Object { Copy-Item "$env:ORT_NATIVE_DIR\*.dll" -Destination $_ -Force }
+            ForEach-Object {
+              $d = $_
+              foreach ($f in $src) {
+                $dst = Join-Path $d $f.Name
+                if (-not (Test-Path $dst)) { Copy-Item $f.FullName -Destination $dst -Force }
+              }
+            }
       - run: cargo test --locked --all-targets
       - run: cargo test --locked --doc
       # The ignored-tests list must stay empty: a test that is ignored
