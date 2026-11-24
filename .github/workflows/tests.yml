@@ -1,29 +1,134 @@
 name: Tests
 
+# Maximum test coverage for the larp crate:
+#  - unit + integration + doc tests on every OS x toolchain (debug)
+#  - the same suite in release mode (Linux, stable)
+#  - examples + a CLI/MCP smoke run against the release binary
+#  - clippy, rustfmt, and docs, all warning-free
+#  - a nightly full-matrix run so regressions surface even without a PR
+#
+# Notes:
+#  - `cargo test --locked` pins the exact Cargo.lock, so CI tests the
+#    same dependency set that ships.
+#  - The `ort` dependency downloads prebuilt ONNX Runtime binaries from
+#    pyke.io at build time (network required on the runner). If that CDN
+#    is unreachable, a local build can point at an existing ONNX Runtime
+#    install instead: ORT_LIB_LOCATION=<dir with libonnxruntime.so>
+#    ORT_PREFER_DYNAMIC_LINK=1 LD_LIBRARY_PATH=<same dir>.
+#  - The v1.4 semantic tests download the Xenova all-MiniLM-L6-v2 model
+#    (~90 MB) into ~/.cache/larp/models on first use; that dir is cached
+#    across runs so repeat jobs do not re-download it.
+
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly full-matrix run at 06:00 UTC.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    name: test (${{ matrix.os }}, ${{ matrix.toolchain }})
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable, beta]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache the embedding model (v1.4 semantic tests)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/larp/models
+          key: larp-model-${{ runner.os }}-minilm-l6-v2
+      # lib + integration + doc tests, every target, debug profile.
+      - run: cargo test --locked --all-targets
+      - run: cargo test --locked --doc
+      # The ignored-tests list must stay empty: a test that is ignored
+      # is a gap, not a pass. Fails the job if anything is #[ignore]d.
+      - name: Fail if any test is ignored
+        shell: bash
+        run: |
+          if grep -rn '#\[ignore' src tests examples 2>/dev/null; then
+            echo "::error:: ignored test(s) found above — un-ignore them or delete them"
+            exit 1
+          fi
+          echo "no ignored tests"
+
+  test-release:
+    name: test --release (ubuntu, stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache the embedding model (v1.4 semantic tests)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/larp/models
+          key: larp-model-Linux-minilm-l6-v2
+      - run: cargo test --locked --release --all-targets
+      - run: cargo test --locked --release --doc
+
+  examples-and-smoke:
+    name: examples + CLI/MCP smoke (ubuntu, stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache the embedding model (v1.4 semantic tests)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/larp/models
+          key: larp-model-Linux-minilm-l6-v2
+      - name: Run the library quickstart example
+        run: cargo run --locked --example quickstart
+      - name: Build the release binary
+        run: cargo build --locked --release
+      - name: CLI smoke test (init/append/search/recall/verify/stats)
+        shell: bash
+        run: |
+          set -euo pipefail
+          LARP=target/release/larp
+          TMP=$(mktemp -d)
+          cd "$TMP"
+          "$OLDPWD/$LARP" --file smoke.larp init
+          "$OLDPWD/$LARP" --file smoke.larp append --type fact --salience 0.9 "the user prefers rust for backend work"
+          "$OLDPWD/$LARP" --file smoke.larp append --type preference "likes short answers"
+          "$OLDPWD/$LARP" --file smoke.larp search rust | grep -q "prefers rust"
+          "$OLDPWD/$LARP" --file smoke.larp recall --max-tokens 500 rust | grep -q "tokens used"
+          "$OLDPWD/$LARP" --file smoke.larp verify
+          "$OLDPWD/$LARP" --file smoke.larp stats | grep -q "live_records: 2"
+          "$OLDPWD/$LARP" --version
+          echo "CLI smoke test passed"
+      - name: MCP smoke test (stdlib Python client)
+        shell: bash
+        run: |
+          export PATH="$PWD/target/release:$PATH"
+          python3 examples/larp_mcp_client.py
 
   lint:
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - run: cargo clippy --all-targets -- -D warnings
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo fmt --check
-      - run: cargo install cargo-audit
-      - run: cargo audit
+      - name: Docs build warning-free
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps

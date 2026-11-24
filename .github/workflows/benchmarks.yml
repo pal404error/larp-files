@@ -20,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Run benchmarks (10,000 records)
         run: cargo run --release --example bench | tee bench-results.txt
       - name: Publish results to job summary

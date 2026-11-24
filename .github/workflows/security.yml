@@ -1,0 +1,31 @@
+name: Security
+
+# Dependency security: fails the build on any known RUSTSEC advisory
+# affecting the locked dependency set. Runs on every dependency change
+# and weekly, so a newly disclosed advisory is caught even when no
+# code changed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+  schedule:
+    # Weekly on Mondays at 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-audit
+      - run: cargo audit

@@ -1,0 +1,42 @@
+name: Coverage
+
+# Line coverage via cargo-tarpaulin. Report-only for now: the HTML and
+# Cobertura XML reports are uploaded as artifacts and the percentage is
+# printed in the job summary. Once a baseline is established, add a
+# threshold gate (e.g. fail below the previous release's coverage).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  coverage:
+    name: tarpaulin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache the embedding model (v1.4 semantic tests)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/larp/models
+          key: larp-model-Linux-minilm-l6-v2
+      - uses: taiki-e/install-action@cargo-tarpaulin
+      - name: Run coverage (all targets, 5 min per-test timeout)
+        run: cargo tarpaulin --locked --out Xml --out Html --timeout 300
+      - name: Publish coverage to job summary
+        shell: bash
+        run: |
+          pct=$(python3 -c "import xml.etree.ElementTree as ET; t=ET.parse('cobertura.xml').getroot(); print(f\"{float(t.get('line-rate'))*100:.1f}\")")
+          echo "line coverage: $pct%"
+          echo "line coverage: **$pct%**" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            cobertura.xml
+            tarpaulin-report.html
