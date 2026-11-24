@@ -59,8 +59,11 @@ jobs:
       # script, so the static link fails with LNK2005/LNK4098 one way
       # and LNK2038 the other. Link ONNX Runtime dynamically instead,
       # from Microsoft's official 1.31.0 NuGet package (the same
-      # runtime version pyke ships for Linux/macOS). ort-sys copies
-      # the DLLs next to the test binaries (copy-dylibs feature).
+      # runtime version pyke ships for Linux/macOS). The copy-dylibs
+      # ort feature puts the DLLs next to the built binary in
+      # target/debug (or target/release), which covers the release
+      # smoke test; the test job copies them explicitly (below)
+      # because the test binaries live elsewhere.
       - name: Fetch ONNX Runtime 1.31.0 (Windows, dynamic link)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -80,16 +83,23 @@ jobs:
           # PATH so every built binary can load onnxruntime.dll.
           $lib | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       # lib + integration + doc tests, every target, debug profile.
-      # Windows: the test binaries run from target/debug/deps, where
-      # copy-dylibs does not place the DLLs, and the runner image
-      # ships an older onnxruntime.dll (1.17.1, API 17 only) that
-      # would otherwise win the DLL search over our 1.31.0. So build
-      # the binaries first, copy the 1.31.0 DLLs next to them (the
-      # exe directory is searched first), then run the tests.
+      # Windows: the runner image ships an older onnxruntime.dll
+      # (1.17.1, API 17 only) that would otherwise win the DLL
+      # search over our 1.31.0 and fail ort::init() with
+      # "requested API version [31]". The exe directory is searched
+      # first, so build the test binaries, copy the 1.31.0 DLLs
+      # next to every built exe — cargo reports them under
+      # target/debug/build/<pkg>/out on this runner, not deps/,
+      # so target\debug\deps does not even exist after --no-run —
+      # then run the tests.
       - if: runner.os == 'Windows'
         run: cargo test --locked --all-targets --no-run
       - if: runner.os == 'Windows'
-        run: Copy-Item "$env:ORT_NATIVE_DIR\*.dll" -Destination target\debug\deps\ -Force
+        shell: pwsh
+        run: |
+          Get-ChildItem target\debug -Recurse -Include *.exe -File |
+            Select-Object -ExpandProperty DirectoryName -Unique |
+            ForEach-Object { Copy-Item "$env:ORT_NATIVE_DIR\*.dll" -Destination $_ -Force }
       - run: cargo test --locked --all-targets
       - run: cargo test --locked --doc
       # The ignored-tests list must stay empty: a test that is ignored
