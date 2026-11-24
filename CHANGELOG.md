@@ -52,6 +52,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
   (NuGet) and link dynamically; the Windows release ships
   `onnxruntime.dll` + `onnxruntime_providers_shared.dll` next to
   `larp.exe`, and `install.ps1` verifies and installs them too.
+  The Windows test job also copies the 1.31.0 DLLs next to the test
+  binaries, since the runner image ships an older `onnxruntime.dll`
+  (1.17.1, API 17 only) that would otherwise win the DLL search and
+  fail `ort::init()` with "requested API version [31]".
 - **rustdoc:** the `escape_display` doc comment contained `[type]`,
   which rustdoc read as an unresolved intra-doc link; it is now
   inline code.

@@ -80,6 +80,16 @@ jobs:
           # PATH so every built binary can load onnxruntime.dll.
           $lib | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       # lib + integration + doc tests, every target, debug profile.
+      # Windows: the test binaries run from target/debug/deps, where
+      # copy-dylibs does not place the DLLs, and the runner image
+      # ships an older onnxruntime.dll (1.17.1, API 17 only) that
+      # would otherwise win the DLL search over our 1.31.0. So build
+      # the binaries first, copy the 1.31.0 DLLs next to them (the
+      # exe directory is searched first), then run the tests.
+      - if: runner.os == 'Windows'
+        run: cargo test --locked --all-targets --no-run
+      - if: runner.os == 'Windows'
+        run: Copy-Item "$env:ORT_NATIVE_DIR\*.dll" -Destination target\debug\deps\ -Force
       - run: cargo test --locked --all-targets
       - run: cargo test --locked --doc
       # The ignored-tests list must stay empty: a test that is ignored
