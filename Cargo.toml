@@ -32,5 +32,17 @@ ort = { version = "=2.0.0-rc.15", features = ["download-binaries", "copy-dylibs"
 tokenizers = "0.22"
 ureq = "2"
 
+# Windows-only: load ONNX Runtime dynamically at runtime instead of
+# linking it. The GitHub runner image ships an older onnxruntime.dll
+# (1.17.1, API 17 only) that wins the DLL search over our 1.31.0 in
+# the test jobs — even with the 1.31.0 DLLs staged next to the test
+# binaries — so ort dlopens the exact 1.31.0 file via ORT_DYLIB_PATH
+# (set in CI) instead of relying on the search order. End users are
+# unaffected: without ORT_DYLIB_PATH, ort dlopens "onnxruntime.dll"
+# and the exe directory (where install.ps1 puts the DLLs) is
+# searched first.
+[target.'cfg(windows)'.dependencies]
+ort = { version = "=2.0.0-rc.15", features = ["download-binaries", "copy-dylibs", "load-dynamic"] }
+
 [profile.release]
 opt-level = 3

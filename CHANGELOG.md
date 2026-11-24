@@ -55,7 +55,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
   The Windows test job also copies the 1.31.0 DLLs next to the test
   binaries, since the runner image ships an older `onnxruntime.dll`
   (1.17.1, API 17 only) that would otherwise win the DLL search and
-  fail `ort::init()` with "requested API version [31]".
+  fail `ort::init()` with "requested API version [31]". When that
+  still was not enough on the beta toolchain, Windows builds switched
+  to ort's `load-dynamic` feature: ort dlopens the exact 1.31.0 file
+  via `ORT_DYLIB_PATH` instead of relying on the search order at all.
 - **rustdoc:** the `escape_display` doc comment contained `[type]`,
   which rustdoc read as an unresolved intra-doc link; it is now
   inline code.
