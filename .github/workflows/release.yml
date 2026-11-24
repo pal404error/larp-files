@@ -23,13 +23,26 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@v2
-      # The ort prebuilt static lib is built with /MT (static CRT);
-      # Rust defaults to /MD, which links both runtimes and fails the
-      # Windows build with LNK2005/LNK4098. Match it on Windows only.
-      - name: Use the static CRT on Windows
+      # Windows cannot use ort's prebuilt static library: it is built
+      # with /MD while tokenizers' esaxx is forced /MT by its own build
+      # script, so the static link fails with LNK2005/LNK4098 one way
+      # and LNK2038 the other. Link ONNX Runtime dynamically instead,
+      # from Microsoft's official 1.31.0 NuGet package (the same
+      # runtime version pyke ships for Linux/macOS). ort-sys copies
+      # the DLLs next to the binary (copy-dylibs feature).
+      - name: Fetch ONNX Runtime 1.31.0 (Windows, dynamic link)
         if: runner.os == 'Windows'
-        shell: bash
-        run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = "$env:RUNNER_TEMP\ort.nupkg"
+          Invoke-WebRequest -Uri "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.31.0/microsoft.ml.onnxruntime.1.31.0.nupkg" -OutFile $zip
+          $dir = "$env:RUNNER_TEMP\onnxruntime"
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          $lib = Join-Path $dir "runtimes\win-x64\native"
+          "ORT_LIB_LOCATION=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "ORT_PREFER_DYNAMIC_LINK=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "ORT_NATIVE_DIR=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: cargo build --release --locked
       - name: Smoke-check the release binary
         run: ./target/release/larp --version
@@ -44,6 +57,10 @@ jobs:
           else
             cp target/release/larp "dist/larp-${OS_NAME}"
           fi
+      - name: Stage ONNX Runtime DLLs (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Copy-Item "$env:ORT_NATIVE_DIR\*.dll" -Destination dist\
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: larp-${{ runner.os }}
@@ -65,7 +82,7 @@ jobs:
       - name: Write SHA256SUMS (verified by install.sh / install.ps1)
         working-directory: dist
         run: |
-          sha256sum larp-* > SHA256SUMS
+          sha256sum larp-* onnxruntime*.dll > SHA256SUMS
           cat SHA256SUMS
       - name: Attest build provenance (verify with `gh attestation verify`)
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
@@ -75,6 +92,7 @@ jobs:
         with:
           files: |
             dist/larp-*
+            dist/onnxruntime*.dll
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           generate_release_notes: true

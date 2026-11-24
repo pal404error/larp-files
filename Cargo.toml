@@ -28,7 +28,7 @@ zstd = "0.14"
 # NOTE: ort 1.x is entirely yanked on crates.io (1.13-1.16 yanked),
 # so v1.4 pins the ort 2.0 release candidate explicitly; move to
 # `ort = "2"` when 2.0 stable ships.
-ort = { version = "=2.0.0-rc.15", features = ["download-binaries"] }
+ort = { version = "=2.0.0-rc.15", features = ["download-binaries", "copy-dylibs"] }
 tokenizers = "0.22"
 ureq = "2"
 

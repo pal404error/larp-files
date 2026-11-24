@@ -1440,7 +1440,7 @@ pub fn stats_text(records: &[Record], size: u64, now: i64) -> String {
 ///
 /// Memory text and tags are untrusted data: they may come from a hostile
 /// file or from content an agent was tricked into remembering. Newlines
-/// let a memory forge extra "#id [type] score=..." lines in recall output,
+/// let a memory forge extra `"#id [type] score=..."` lines in recall output,
 /// terminal escape sequences can rewrite the screen, and bidi overrides
 /// can reorder what is displayed. All of them are shown as visible
 /// escapes instead (`\n`, `\r`, `\t`, `\u{..}`). Stored data is unchanged.

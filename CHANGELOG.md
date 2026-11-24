@@ -44,10 +44,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), adherin
   file; one process renamed it away while another was still writing,
   and the loser failed with "No such file or directory". Downloads
   now use a per-process temp name.
-- **Windows release build links the static CRT.** The ort prebuilt
-  static library is built with /MT while Rust defaults to /MD, which
-  failed the Windows build with LNK2005/LNK4098; Windows CI jobs now
-  set `-C target-feature=+crt-static`.
+- **Windows release build links ONNX Runtime dynamically.** The ort
+  prebuilt static library is built with /MD while tokenizers' esaxx
+  is forced /MT by its own build script, so no single CRT links the
+  static build (LNK2005/LNK4098 one way, LNK2038 the other).
+  Windows CI jobs now fetch Microsoft's official ONNX Runtime 1.31.0
+  (NuGet) and link dynamically; the Windows release ships
+  `onnxruntime.dll` + `onnxruntime_providers_shared.dll` next to
+  `larp.exe`, and `install.ps1` verifies and installs them too.
+- **rustdoc:** the `escape_display` doc comment contained `[type]`,
+  which rustdoc read as an unresolved intra-doc link; it is now
+  inline code.
 - Removed the unused `ndarray` dependency.
 
 ---

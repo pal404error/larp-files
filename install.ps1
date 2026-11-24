@@ -68,6 +68,34 @@ try {
     $ExePath = Join-Path $TargetDir "larp.exe"
     Move-Item -Path $TmpExe -Destination $ExePath -Force
     Write-Host "Installed $ExePath (sha256 $Actual)" -ForegroundColor Green
+
+    # Since v1.4.0 the Windows binary links ONNX Runtime dynamically:
+    # its DLLs must sit next to larp.exe. Each one is verified against
+    # SHA256SUMS like the binary. Releases before 1.4.0 have no DLL
+    # entries, and the static binary needs none, so those are skipped.
+    $Dlls = @("onnxruntime.dll", "onnxruntime_providers_shared.dll")
+    foreach ($Dll in $Dlls) {
+        $ExpectedDll = $null
+        foreach ($Line in Get-Content $TmpSums) {
+            $Parts = $Line.Trim() -split '\s+', 2
+            if ($Parts.Count -eq 2 -and $Parts[1].TrimStart('*') -eq $Dll) {
+                $ExpectedDll = $Parts[0].ToLowerInvariant()
+            }
+        }
+        if (-not $ExpectedDll) {
+            Write-Host "No checksum for $Dll in SHA256SUMS; skipping (pre-1.4.0 release)." -ForegroundColor Yellow
+            continue
+        }
+        $TmpDll = Join-Path $TmpDir $Dll
+        Write-Host "Downloading $Dll ..." -ForegroundColor Cyan
+        Invoke-WebRequest -Uri "$ReleaseUrl/$Dll" -OutFile $TmpDll -UseBasicParsing
+        $ActualDll = (Get-FileHash -Path $TmpDll -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($ExpectedDll -ne $ActualDll) {
+            throw "Checksum mismatch for $Dll (expected $ExpectedDll, got $ActualDll); refusing to install."
+        }
+        Move-Item -Path $TmpDll -Destination (Join-Path $TargetDir $Dll) -Force
+        Write-Host "Installed $Dll (sha256 $ActualDll)" -ForegroundColor Green
+    }
 } finally {
     Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue
 }

@@ -14,7 +14,15 @@ New-Item -ItemType Directory -Path $Rel -Force | Out-Null
 
 function Write-Sums {
     $h = (Get-FileHash (Join-Path $Rel "larp-Windows.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
-    Set-Content -Path (Join-Path $Rel "SHA256SUMS") -Value "$h  larp-Windows.exe" -Encoding ascii
+    $lines = @("$h  larp-Windows.exe")
+    foreach ($Dll in @("onnxruntime.dll", "onnxruntime_providers_shared.dll")) {
+        $p = Join-Path $Rel $Dll
+        if (Test-Path $p) {
+            $dh = (Get-FileHash $p -Algorithm SHA256).Hash.ToLowerInvariant()
+            $lines += "$dh  $Dll"
+        }
+    }
+    Set-Content -Path (Join-Path $Rel "SHA256SUMS") -Value $lines -Encoding ascii
 }
 function Invoke-Install {
     # Child process: environment is inherited, so set it only for the child.
@@ -51,6 +59,21 @@ try {
     Remove-Item (Join-Path $Rel "SHA256SUMS")
     if (Invoke-Install) { throw "unverifiable binary was installed" }
     if (Test-Path (Join-Path $Out "larp.exe")) { throw "file installed without verification" }
+
+    # 4. v1.4.0+ release: ONNX Runtime DLLs install alongside the binary.
+    Set-Content -Path (Join-Path $Rel "larp-Windows.exe") -Value "genuine larp binary" -Encoding ascii
+    Set-Content -Path (Join-Path $Rel "onnxruntime.dll") -Value "genuine ort dll" -Encoding ascii
+    Set-Content -Path (Join-Path $Rel "onnxruntime_providers_shared.dll") -Value "genuine providers dll" -Encoding ascii
+    Write-Sums
+    if (-not (Invoke-Install)) { throw "release with DLLs was refused: $(Get-Content $ErrLog -Raw)" }
+    if ((Get-Content (Join-Path $Out "onnxruntime.dll") -Raw) -notmatch "genuine ort") { throw "onnxruntime.dll was not installed" }
+    if ((Get-Content (Join-Path $Out "onnxruntime_providers_shared.dll") -Raw) -notmatch "genuine providers") { throw "providers dll was not installed" }
+
+    # 5. Tampered DLL is refused; previous DLL untouched.
+    Set-Content -Path (Join-Path $Rel "onnxruntime.dll") -Value "evil dll" -Encoding ascii
+    if (Invoke-Install) { throw "tampered DLL was installed" }
+    if ((Get-Content $ErrLog -Raw) -notmatch "Checksum mismatch for onnxruntime.dll") { throw "no DLL mismatch message" }
+    if ((Get-Content (Join-Path $Out "onnxruntime.dll") -Raw) -notmatch "genuine ort") { throw "previous DLL was overwritten" }
 
     Write-Host "install.ps1 checksum tests: ok"
 } finally {
