@@ -43,6 +43,11 @@ jobs:
           "ORT_LIB_LOCATION=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "ORT_PREFER_DYNAMIC_LINK=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "ORT_NATIVE_DIR=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # Test binaries run from target/debug/deps, where copy-dylibs
+          # does not place the DLLs (it stops at target/debug when it
+          # has to copy instead of symlink); put the native dir on
+          # PATH so every built binary can load onnxruntime.dll.
+          $lib | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - run: cargo build --release --locked
       - name: Smoke-check the release binary
         run: ./target/release/larp --version
